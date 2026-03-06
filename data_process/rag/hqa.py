@@ -14,6 +14,8 @@ from typing import Any, Dict, List, Union, TypedDict
 
 from transformers import AutoTokenizer, PreTrainedTokenizer, PreTrainedModel, AutoModel
 
+from src.rag_prompting import build_rag_prompt
+
 Document = TypedDict("Document", {"title": str, "text": str, "score": float})
 
 SFTDataInstanceInputs = TypedDict("SFTDataInstanceInputs", {
@@ -78,25 +80,7 @@ def process_instance(ins: Dict[str, Any]) -> SFTDataInstance:
 
 
 def tokenizer_instance(ins: SFTDataInstance) -> SFTDataInstance:
-    system_prompt = "You are an intelligent AI assistant. Please answer questions based on the user's instructions. Below are some reference documents that may help you in answering the user's question.\n\n"
-    for d_idx in range(0, len(ins['documents'])):
-        doc = ins["documents"][d_idx]
-        system_prompt += f"- Title: {doc['title']}\n{doc['text'].strip()}\n"
-    system_prompt = system_prompt.strip()
-
-    user_prompt = f"Please write a high-quality answer for the given question using only the provided search documents (some of which might be irrelevant).\nQuestion: {ins['question']}".strip()
-    prompt = llama3_tokenizer.apply_chat_template(
-        conversation=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        tokenize=False,
-        add_generation_prompt=True
-    )
-    ins["prompt"] = prompt.replace(
-        "<|eot_id|><|start_header_id|>user<|end_header_id|>",
-        "\n<|eot_id|><|start_header_id|>user<|end_header_id|>"
-    )
+    ins["prompt"] = build_rag_prompt(question=ins["question"], documents=ins["documents"])
     return ins
 
 
@@ -137,13 +121,6 @@ if __name__ == '__main__':
         torch_dtype=torch.bfloat16,
         device_map="cuda:0"
     )
-
-    llama3_tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(
-        pretrained_model_name_or_path="meta-llama/Meta-Llama-3-8B",
-        use_fast=False
-    )
-    if llama3_tokenizer.chat_template is None:
-        llama3_tokenizer.chat_template = "{% set loop_messages = messages %}{% for message in loop_messages %}{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'] | trim + '<|eot_id|>' %}{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{% endif %}"
 
     process_file(
         input_file=args.eval_fp, output_file=os.path.join(args.output_dir, "hqa_eval", "dataset"), num_samples=-1

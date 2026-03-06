@@ -9,9 +9,11 @@ import pandas as pd
 
 from tqdm import tqdm
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Union, TypedDict
+from typing import Any, Dict, List, Optional, Union, TypedDict
 
 from transformers import AutoTokenizer, PreTrainedTokenizer, PreTrainedModel, AutoModel
+
+from src.rag_prompting import build_rag_prompt
 
 Document = TypedDict("Document", {"title": str, "text": str, "score": float})
 
@@ -32,8 +34,8 @@ SFTDataInstance = TypedDict("SFTDataInstance", {
 
 @dataclass
 class BuildArgs:
-    train_fp: str
-    dev_fp: str
+    train_fp: Optional[str]
+    eval_fp: Optional[str]
     output_dir: str
 
 
@@ -81,25 +83,7 @@ def process_instance(ins: Dict[str, Any]) -> SFTDataInstance:
 
 
 def tokenizer_instance(ins: SFTDataInstance) -> SFTDataInstance:
-    system_prompt = "You are an intelligent AI assistant. Please answer questions based on the user's instructions. Below are some reference documents that may help you in answering the user's question.\n\n"
-    for d_idx in range(0, len(ins['documents'])):
-        doc = ins["documents"][d_idx]
-        system_prompt += f"- Title: {doc['title']}\n{doc['text'].strip()}\n"
-    system_prompt = system_prompt.strip()
-
-    user_prompt = f"Please write a high-quality answer for the given question using only the provided search documents (some of which might be irrelevant).\nQuestion: {ins['question']}".strip()
-    prompt = llama3_tokenizer.apply_chat_template(
-        conversation=[
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": user_prompt}
-        ],
-        tokenize=False,
-        add_generation_prompt=True
-    )
-    ins["prompt"] = prompt.replace(
-        "<|eot_id|><|start_header_id|>user<|end_header_id|>",
-        "\n<|eot_id|><|start_header_id|>user<|end_header_id|>"
-    )
+    ins["prompt"] = build_rag_prompt(question=ins["question"], documents=ins["documents"])
     return ins
 
 
@@ -122,12 +106,12 @@ def process_file(input_file: str, output_file: str, num_samples: int):
 
 def parse_args() -> BuildArgs:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--train_fp", type=str)
-    parser.add_argument("--dev_fp", type=str)
+    parser.add_argument("--train_fp", type=str, default="")
+    parser.add_argument("--eval_fp", "--dev_fp", dest="eval_fp", type=str, default="")
     parser.add_argument("--output_dir", type=str)
     args = parser.parse_args()
     return BuildArgs(
-        train_fp=args.train_fp, dev_fp=args.dev_fp, output_dir=args.output_dir
+        train_fp=args.train_fp or None, eval_fp=args.eval_fp or None, output_dir=args.output_dir
     )
 
 
@@ -145,16 +129,14 @@ if __name__ == '__main__':
         device_map="cuda:0"
     )
 
-    llama3_tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(
-        pretrained_model_name_or_path="meta-llama/Meta-Llama-3-8B",
-        use_fast=False
-    )
-    if llama3_tokenizer.chat_template is None:
-        llama3_tokenizer.chat_template = "{% set loop_messages = messages %}{% for message in loop_messages %}{% set content = '<|start_header_id|>' + message['role'] + '<|end_header_id|>\n\n'+ message['content'] | trim + '<|eot_id|>' %}{% if loop.index0 == 0 %}{% set content = bos_token + content %}{% endif %}{{ content }}{% endfor %}{% if add_generation_prompt %}{{ '<|start_header_id|>assistant<|end_header_id|>\n\n' }}{% endif %}"
+    if args.train_fp is None and args.eval_fp is None:
+        raise ValueError("At least one of --train_fp or --eval_fp must be provided.")
 
-    process_file(
-        input_file=args.train_fp, output_file=os.path.join(args.output_dir, "2wiki_train", "dataset"), num_samples=-1
-    )
-    process_file(
-        input_file=args.dev_fp, output_file=os.path.join(args.output_dir, "2wiki_dev", "dataset"), num_samples=-1
-    )
+    if args.train_fp is not None:
+        process_file(
+            input_file=args.train_fp, output_file=os.path.join(args.output_dir, "2wiki_train", "dataset"), num_samples=-1
+        )
+    if args.eval_fp is not None:
+        process_file(
+            input_file=args.eval_fp, output_file=os.path.join(args.output_dir, "2wiki_eval", "dataset"), num_samples=-1
+        )

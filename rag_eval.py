@@ -6,13 +6,10 @@ import regex
 import string
 import statistics
 
-from torch.ao.quantization.fx.utils import all_node_args_except_first
 from tqdm import tqdm
 from dataclasses import dataclass
 
 from typing import Any, Dict, List, TypedDict
-
-from urllib3.contrib.securetransport import orig_util_SSLContext
 
 Document = TypedDict("Document", {"title": str, "text": str, "score": float})
 
@@ -89,24 +86,41 @@ def get_metrics_for_example(example: SFTDataInstance):
     return example_metrics, example
 
 
-def main(args: EvalArgs):
-    if os.path.isfile(args.input):
-        all_examples: List[SFTDataInstance] = load_jsonline(fp=args.input)
-    else:
-        all_examples: List[SFTDataInstance] = []
-        for f_name in os.listdir(args.input):
-            fp = os.path.join(args.input, f_name)
-            all_examples.extend(load_jsonline(fp=fp))
+def load_examples(path: str) -> List[SFTDataInstance]:
+    if os.path.isfile(path):
+        return load_jsonline(fp=path)
 
+    all_examples: List[SFTDataInstance] = []
+    for f_name in sorted(os.listdir(path)):
+        fp = os.path.join(path, f_name)
+        if os.path.isfile(fp):
+            all_examples.extend(load_jsonline(fp=fp))
+    return all_examples
+
+
+def evaluate_examples(examples: List[SFTDataInstance]) -> Dict[str, float]:
     all_example_metrics = []
-    for example in tqdm(all_examples, total=len(all_examples), desc="Eval: "):
+    for example in tqdm(examples, total=len(examples), desc="Eval: "):
         all_example_metrics.append(get_metrics_for_example(example=example))
 
-    print("All Examples: ", len(all_examples))
+    results: Dict[str, float] = {"count": float(len(examples))}
+    for _, metric_name in METRICS:
+        results[metric_name] = statistics.mean(metrics[metric_name] for metrics, _ in all_example_metrics)
+    return results
 
-    for _, metric in METRICS:
-        average = statistics.mean(em[metric]  for em, _ in all_examples)
-        print(f"{metric}: {average}")
+
+def evaluate_path(path: str) -> Dict[str, float]:
+    examples = load_examples(path=path)
+    if not examples:
+        raise ValueError(f"No examples found under: {path}")
+    return evaluate_examples(examples=examples)
+
+
+def main(args: EvalArgs):
+    results = evaluate_path(path=args.input)
+    print(f"count: {int(results['count'])}")
+    for _, metric_name in METRICS:
+        print(f"{metric_name}: {results[metric_name]:.6f}")
 
 
 
