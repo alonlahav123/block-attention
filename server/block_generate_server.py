@@ -32,9 +32,11 @@ CORS(app, supports_credentials=True)
 
 
 def pkv_to_device(pkv: DynamicCache, device: Union[torch.device, str]) -> DynamicCache:
-    for i in range(0, len(pkv.key_cache)):
-        pkv.key_cache[i] = pkv.key_cache[i].to(device=device)
-        pkv.value_cache[i] = pkv.value_cache[i].to(device=device)
+    for layer in pkv.layers:
+        if layer.keys is not None:
+            layer.keys = layer.keys.to(device=device)
+        if layer.values is not None:
+            layer.values = layer.values.to(device=device)
     return pkv
 
 
@@ -77,41 +79,57 @@ def apply_rotary_pos_emb(k, cos, sin, position_ids, unsqueeze_dim=1):
     return k_embed.to(dtype=torch.bfloat16)
 
 
+def _get_first_layer_keys(pkv: DynamicCache) -> torch.Tensor:
+    for layer in pkv.layers:
+        if layer.keys is not None:
+            return layer.keys
+    raise ValueError("DynamicCache has no key tensors.")
+
+
 def apply_pkv_rotary_position_embeddings(pkv: DynamicCache, emb: LlamaRotaryEmbedding) -> DynamicCache:
-    device = pkv.key_cache[0].device
+    first_layer_keys = _get_first_layer_keys(pkv=pkv)
+    device = first_layer_keys.device
     emb.to(device=device)
-    position_ids = torch.arange(start=0, end=pkv.key_cache[0].size(-2), dtype=torch.int64, device=device)
-    position_ids = position_ids.unsqueeze(dim=0).repeat(repeats=[pkv.key_cache[0].size(0), 1])
-    cos, sin = emb(x=pkv.key_cache[0].to(dtype=torch.float32), position_ids=position_ids)
-    for i in range(0, len(pkv.key_cache)):
-        pkv.key_cache[i] = apply_rotary_pos_emb(
-            k=pkv.key_cache[i].to(dtype=torch.float32), cos=cos, sin=sin, position_ids=position_ids
+    position_ids = torch.arange(start=0, end=first_layer_keys.size(-2), dtype=torch.int64, device=device)
+    position_ids = position_ids.unsqueeze(dim=0).repeat(repeats=[first_layer_keys.size(0), 1])
+    cos, sin = emb(x=first_layer_keys.to(dtype=torch.float32), position_ids=position_ids)
+    for layer in pkv.layers:
+        if layer.keys is None:
+            continue
+        layer.keys = apply_rotary_pos_emb(
+            k=layer.keys.to(dtype=torch.float32), cos=cos, sin=sin, position_ids=position_ids
         )
     return pkv
 
 
 def apply_pkv_rerotary_position_embeddings(pkv: DynamicCache, emb: LlamaRotaryEmbedding) -> DynamicCache:
-    device = pkv.key_cache[0].device
+    first_layer_keys = _get_first_layer_keys(pkv=pkv)
+    device = first_layer_keys.device
     emb.to(device=device)
-    position_ids = torch.arange(start=0, end=pkv.key_cache[0].size(-2), dtype=torch.int64, device=device)
-    position_ids = position_ids.unsqueeze(dim=0).repeat(repeats=[pkv.key_cache[0].size(0), 1])
-    cos, sin = emb(x=pkv.key_cache[0].to(dtype=torch.float32), position_ids=position_ids)
-    for i in range(0, len(pkv.key_cache)):
-        pkv.key_cache[i] = apply_rotary_pos_emb(
-            k=pkv.key_cache[i].to(dtype=torch.float32), cos=cos, sin=-sin, position_ids=position_ids
+    position_ids = torch.arange(start=0, end=first_layer_keys.size(-2), dtype=torch.int64, device=device)
+    position_ids = position_ids.unsqueeze(dim=0).repeat(repeats=[first_layer_keys.size(0), 1])
+    cos, sin = emb(x=first_layer_keys.to(dtype=torch.float32), position_ids=position_ids)
+    for layer in pkv.layers:
+        if layer.keys is None:
+            continue
+        layer.keys = apply_rotary_pos_emb(
+            k=layer.keys.to(dtype=torch.float32), cos=cos, sin=-sin, position_ids=position_ids
         )
     return pkv
 
 
 def merge_and_rotary_past_key_values(pkvs: List[DynamicCache], emb: LlamaRotaryEmbedding) -> DynamicCache:
     cache = pkvs[0]
-    for l_idx in range(0, len(cache)):
-        cache.key_cache[l_idx] = torch.cat(
-            tensors=[cache.key_cache[l_idx]] + [pkvs[b_idx].key_cache[l_idx] for b_idx in range(1, len(pkvs))],
+    for l_idx, layer in enumerate(cache.layers):
+        if layer.keys is None or layer.values is None:
+            continue
+
+        layer.keys = torch.cat(
+            tensors=[layer.keys] + [pkvs[b_idx].layers[l_idx].keys for b_idx in range(1, len(pkvs))],
             dim=-2
         )
-        cache.value_cache[l_idx] = torch.cat(
-            tensors=[cache.value_cache[l_idx]] + [pkvs[b_idx].value_cache[l_idx] for b_idx in range(1, len(pkvs))],
+        layer.values = torch.cat(
+            tensors=[layer.values] + [pkvs[b_idx].layers[l_idx].values for b_idx in range(1, len(pkvs))],
             dim=-2
         )
     cache = apply_pkv_rotary_position_embeddings(pkv=cache, emb=emb)
@@ -151,7 +169,8 @@ def build_block_past_key_values(
             input_ids = torch.cat(tensors=[input_ids, block_input_ids], dim=-1)
 
         output: CausalLMOutputWithPast = model(
-            input_ids=block_input_ids, use_cache=True, past_key_values=DynamicCache(), return_dict=True
+            input_ids=block_input_ids, use_cache=True, past_key_values=DynamicCache(config=model.config),
+            return_dict=True
         )
         pkv = apply_pkv_rerotary_position_embeddings(pkv=output.past_key_values, emb=emb)
         caches.append(pkv)
