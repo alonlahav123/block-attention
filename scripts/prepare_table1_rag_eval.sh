@@ -12,6 +12,8 @@ INSTALL_DEPS=1
 INSTALL_FLASH_ATTN="${INSTALL_FLASH_ATTN:-1}"
 TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}"
 TORCH_PACKAGE="${TORCH_PACKAGE:-torch==2.6.0}"
+CUDA_VISIBLE_DEVICES_VALUE="${CUDA_VISIBLE_DEVICES:-}"
+CUDA_DEVICE="${BLOCK_ATTENTION_CUDA_DEVICE:-cuda:0}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -27,12 +29,25 @@ while [[ $# -gt 0 ]]; do
             INSTALL_DEPS=0
             shift
             ;;
+        --cuda-visible-devices)
+            CUDA_VISIBLE_DEVICES_VALUE="$2"
+            shift 2
+            ;;
+        --cuda-device)
+            CUDA_DEVICE="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown argument: $1" >&2
             exit 1
             ;;
     esac
 done
+
+if [[ -n "${CUDA_VISIBLE_DEVICES_VALUE}" ]]; then
+    export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES_VALUE}"
+fi
+export BLOCK_ATTENTION_CUDA_DEVICE="${CUDA_DEVICE}"
 
 PYTHON_BIN="${VENV_DIR}/bin/python"
 

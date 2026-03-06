@@ -15,6 +15,8 @@ from transformers import (
     AutoTokenizer, PreTrainedTokenizer, AutoModelForCausalLM, GenerationConfig, AutoConfig
 )
 
+from src.runtime import get_cuda_device
+
 SFTDataInstanceInputs = TypedDict("SFTDataInstanceInputs", {
     "input_ids": List[int],
     "labels": List[int]
@@ -227,6 +229,7 @@ class Args:
     model: str
     port: int
     dtype: str
+    device: str = get_cuda_device()
 
 
 if __name__ == '__main__':
@@ -237,13 +240,13 @@ if __name__ == '__main__':
     )
 
     block_attention_special_token = torch.tensor(
-        data=[tokenizer.encode("[Block-Attention]", add_special_tokens=False)], dtype=torch.int64, device="cuda:0"
+        data=[tokenizer.encode("[Block-Attention]", add_special_tokens=False)], dtype=torch.int64, device=args.device
     )
 
     model = AutoModelForCausalLM.from_pretrained(
         pretrained_model_name_or_path=args.model,
         torch_dtype=torch.bfloat16,
-        device_map="cuda:0",
+        device_map=args.device,
         attn_implementation="flash_attention_2"
     )
     model.eval()

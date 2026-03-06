@@ -12,6 +12,8 @@ PORT=8080
 NUM_LOCAL_ATTENTION_BLOCKS=10000
 VENV_DIR="${ROOT_DIR}/.venv"
 DATA_ROOT="${ROOT_DIR}/datahub"
+CUDA_VISIBLE_DEVICES_VALUE="${CUDA_VISIBLE_DEVICES:-}"
+CUDA_DEVICE="${BLOCK_ATTENTION_CUDA_DEVICE:-cuda:0}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -39,12 +41,25 @@ while [[ $# -gt 0 ]]; do
             DATA_ROOT="$2"
             shift 2
             ;;
+        --cuda-visible-devices)
+            CUDA_VISIBLE_DEVICES_VALUE="$2"
+            shift 2
+            ;;
+        --cuda-device)
+            CUDA_DEVICE="$2"
+            shift 2
+            ;;
         *)
             echo "Unknown argument: $1" >&2
             exit 1
             ;;
     esac
 done
+
+if [[ -n "${CUDA_VISIBLE_DEVICES_VALUE}" ]]; then
+    export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES_VALUE}"
+fi
+export BLOCK_ATTENTION_CUDA_DEVICE="${CUDA_DEVICE}"
 
 PYTHON_BIN="${VENV_DIR}/bin/python"
 MODEL_CACHE_DIR="${ROOT_DIR}/models"
@@ -61,7 +76,10 @@ trap cleanup EXIT
 
 mkdir -p "${OUTPUT_ROOT}" "${MODEL_CACHE_DIR}"
 
-bash "${ROOT_DIR}/scripts/prepare_table1_rag_eval.sh" --data-root "${DATA_ROOT}" --venv "${VENV_DIR}"
+bash "${ROOT_DIR}/scripts/prepare_table1_rag_eval.sh" \
+    --data-root "${DATA_ROOT}" \
+    --venv "${VENV_DIR}" \
+    --cuda-device "${CUDA_DEVICE}"
 
 if [[ -d "${MODEL_SOURCE}" ]]; then
     MODEL_DIR=$(cd "${MODEL_SOURCE}" && pwd)

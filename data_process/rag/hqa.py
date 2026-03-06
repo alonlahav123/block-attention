@@ -15,6 +15,7 @@ from typing import Any, Dict, List, Union, TypedDict
 from transformers import AutoTokenizer, PreTrainedTokenizer, PreTrainedModel, AutoModel
 
 from src.rag_prompting import build_rag_prompt
+from src.runtime import get_cuda_device
 
 Document = TypedDict("Document", {"title": str, "text": str, "score": float})
 
@@ -119,7 +120,7 @@ if __name__ == '__main__':
     model: PreTrainedModel = AutoModel.from_pretrained(
         pretrained_model_name_or_path=model_name,
         torch_dtype=torch.bfloat16,
-        device_map="cuda:0"
+        device_map=get_cuda_device()
     )
 
     process_file(
