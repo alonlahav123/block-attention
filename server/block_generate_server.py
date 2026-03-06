@@ -170,7 +170,7 @@ def build_block_past_key_values(
 @torch.no_grad()
 def block_generate(
         blocks: List[str], instruction: str, generation_config: GenerationConfig, model: LlamaForCausalLM,
-        emb: LlamaRotaryEmbedding, tokenizer: PreTrainedTokenizer, num_local_attention_blocks: int, task_type: str
+        emb: LlamaRotaryEmbedding, tokenizer: PreTrainedTokenizer, num_local_attention_blocks: int
 ) -> str:
     past_key_values, input_ids = build_block_past_key_values(
         blocks=blocks, instruction=instruction, tokenizer=tokenizer, model=model, emb=emb,
