@@ -6,6 +6,25 @@ ROOT_DIR=$(cd -- "${SCRIPT_DIR}/.." && pwd)
 
 cd "${ROOT_DIR}"
 
+ensure_command() {
+    local command_name="$1"
+    local apt_package="${2:-$1}"
+
+    if command -v "${command_name}" >/dev/null 2>&1; then
+        return 0
+    fi
+
+    if command -v apt-get >/dev/null 2>&1 && [[ "$(id -u)" -eq 0 ]]; then
+        apt-get update
+        apt-get install -y --no-install-recommends "${apt_package}"
+        rm -rf /var/lib/apt/lists/*
+        return 0
+    fi
+
+    echo "Missing required command '${command_name}'. Install package '${apt_package}' and rerun." >&2
+    exit 1
+}
+
 DATA_ROOT="${ROOT_DIR}/datahub"
 VENV_DIR="${ROOT_DIR}/.venv"
 INSTALL_DEPS=1
@@ -48,6 +67,8 @@ if [[ -n "${CUDA_VISIBLE_DEVICES_VALUE}" ]]; then
     export CUDA_VISIBLE_DEVICES="${CUDA_VISIBLE_DEVICES_VALUE}"
 fi
 export BLOCK_ATTENTION_CUDA_DEVICE="${CUDA_DEVICE}"
+
+ensure_command wget
 
 PYTHON_BIN="${VENV_DIR}/bin/python"
 
