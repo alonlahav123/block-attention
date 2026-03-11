@@ -251,7 +251,7 @@ if __name__ == '__main__':
 
     model = AutoModelForCausalLM.from_pretrained(
         pretrained_model_name_or_path=args.model,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         device_map=args.device,
         attn_implementation="flash_attention_2"
     )

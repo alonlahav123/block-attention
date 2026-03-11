@@ -95,12 +95,25 @@ if transformers.__version__ != "4.56.2":
 PY
 }
 
+run_preprocessor_if_needed() {
+    local output_fp="$1"
+    shift
+
+    if [[ "${FORCE_PREPROCESS}" != "1" && -s "${output_fp}" ]]; then
+        echo "Skipping existing dataset: ${output_fp}"
+        return 0
+    fi
+
+    "$@"
+}
+
 DATA_ROOT="${ROOT_DIR}/datahub"
 VENV_DIR="${ROOT_DIR}/.venv"
 INSTALL_DEPS=1
 INSTALL_FLASH_ATTN="${INSTALL_FLASH_ATTN:-1}"
 TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}"
 TORCH_PACKAGE="${TORCH_PACKAGE:-torch==2.6.0}"
+FORCE_PREPROCESS="${FORCE_PREPROCESS:-0}"
 CUDA_VISIBLE_DEVICES_VALUE="${CUDA_VISIBLE_DEVICES:-}"
 CUDA_DEVICE="${BLOCK_ATTENTION_CUDA_DEVICE:-cuda:0}"
 
@@ -207,19 +220,23 @@ fi
 ln -snf "${DATA_ROOT}/FiD/open_domain_data/NQ/test.json" "${DATA_ROOT}/nq/test.json"
 ln -snf "${DATA_ROOT}/FiD/open_domain_data/TQA/test.json" "${DATA_ROOT}/tqa/test.json"
 
-"${PYTHON_BIN}" data_process/rag/hqa.py \
+run_preprocessor_if_needed "${DATA_ROOT}/rag/hqa_eval/dataset" \
+    "${PYTHON_BIN}" data_process/rag/hqa.py \
     --eval_fp "${DATA_ROOT}/hqa/hotpot_dev_distractor_v1.json" \
     --output_dir "${DATA_ROOT}/rag"
 
-"${PYTHON_BIN}" data_process/rag/nq.py \
+run_preprocessor_if_needed "${DATA_ROOT}/rag/nq_eval/dataset" \
+    "${PYTHON_BIN}" data_process/rag/nq.py \
     --eval_fp "${DATA_ROOT}/nq/test.json" \
     --output_dir "${DATA_ROOT}/rag"
 
-"${PYTHON_BIN}" data_process/rag/tqa.py \
+run_preprocessor_if_needed "${DATA_ROOT}/rag/tqa_eval/dataset" \
+    "${PYTHON_BIN}" data_process/rag/tqa.py \
     --eval_fp "${DATA_ROOT}/tqa/test.json" \
     --output_dir "${DATA_ROOT}/rag"
 
-"${PYTHON_BIN}" data_process/rag/2wiki.py \
+run_preprocessor_if_needed "${DATA_ROOT}/rag/2wiki_eval/dataset" \
+    "${PYTHON_BIN}" data_process/rag/2wiki.py \
     --eval_fp "${DATA_ROOT}/2wiki/dev.parquet" \
     --output_dir "${DATA_ROOT}/rag"
 

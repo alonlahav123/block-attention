@@ -21,6 +21,7 @@ from typing import Any, Dict, List, Union, TypedDict
 from transformers import AutoTokenizer, PreTrainedTokenizer, PreTrainedModel, AutoModel
 
 from src.rag_prompting import build_rag_prompt
+from src.rag_schema import normalize_answers
 from src.runtime import get_cuda_device
 
 Document = TypedDict("Document", {"title": str, "text": str, "score": float})
@@ -79,7 +80,7 @@ def process_instance(ins: Dict[str, Any]) -> SFTDataInstance:
     return SFTDataInstance(
         prompt="",
         question=ins['question'],
-        answers=[ins['answer']],
+        answers=normalize_answers(ins),
         generated='',
         inputs=SFTDataInstanceInputs(input_ids=[], labels=[]),
         documents=documents[:10]
@@ -125,7 +126,7 @@ if __name__ == '__main__':
     retrieval_tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(pretrained_model_name_or_path=model_name)
     model: PreTrainedModel = AutoModel.from_pretrained(
         pretrained_model_name_or_path=model_name,
-        torch_dtype=torch.bfloat16,
+        dtype=torch.bfloat16,
         device_map=get_cuda_device()
     )
 
