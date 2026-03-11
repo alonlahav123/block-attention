@@ -15,6 +15,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     openssh-server \
     python3 \
     python3-dev \
+    python-is-python3 \
     python3-pip \
     python3-venv \
     sudo \

@@ -25,6 +25,19 @@ ensure_command() {
     exit 1
 }
 
+ensure_python_alias() {
+    local shim_dir="${ROOT_DIR}/.local/bin"
+
+    if command -v python >/dev/null 2>&1; then
+        return 0
+    fi
+
+    ensure_command python3 python3
+    mkdir -p "${shim_dir}"
+    ln -snf "$(command -v python3)" "${shim_dir}/python"
+    export PATH="${shim_dir}:${PATH}"
+}
+
 DATA_ROOT="${ROOT_DIR}/datahub"
 VENV_DIR="${ROOT_DIR}/.venv"
 INSTALL_DEPS=1
@@ -69,6 +82,7 @@ fi
 export BLOCK_ATTENTION_CUDA_DEVICE="${CUDA_DEVICE}"
 
 ensure_command wget
+ensure_python_alias
 
 PYTHON_BIN="${VENV_DIR}/bin/python"
 
