@@ -38,6 +38,27 @@ ensure_python_alias() {
     export PATH="${shim_dir}:${PATH}"
 }
 
+patch_fid_for_modern_python() {
+    local preprocess_fp="$1/src/preprocess.py"
+
+    if [[ ! -f "${preprocess_fp}" ]]; then
+        return 0
+    fi
+
+    # The upstream FiD preprocessing script imports the removed stdlib
+    # module "parser", but never uses it.
+    PREPROCESS_FP="${preprocess_fp}" python3 - <<'PY'
+from pathlib import Path
+import os
+
+path = Path(os.environ["PREPROCESS_FP"])
+text = path.read_text(encoding="utf-8")
+patched = text.replace("import parser\n", "")
+if patched != text:
+    path.write_text(patched, encoding="utf-8")
+PY
+}
+
 DATA_ROOT="${ROOT_DIR}/datahub"
 VENV_DIR="${ROOT_DIR}/.venv"
 INSTALL_DEPS=1
@@ -131,6 +152,7 @@ fi
 if [[ ! -d "${DATA_ROOT}/FiD" ]]; then
     git clone https://github.com/facebookresearch/FiD "${DATA_ROOT}/FiD"
 fi
+patch_fid_for_modern_python "${DATA_ROOT}/FiD"
 
 if [[ ! -f "${DATA_ROOT}/FiD/open_domain_data/NQ/test.json" || ! -f "${DATA_ROOT}/FiD/open_domain_data/TQA/test.json" ]]; then
     (
