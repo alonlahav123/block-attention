@@ -25,37 +25,60 @@ ensure_command() {
     exit 1
 }
 
-ensure_python_alias() {
-    local shim_dir="${ROOT_DIR}/.local/bin"
+patch_fid_for_local_env() {
+    local fid_dir="$1"
+    local preprocess_fp="${fid_dir}/src/preprocess.py"
+    local get_data_fp="${fid_dir}/get-data.sh"
 
-    if command -v python >/dev/null 2>&1; then
+    if [[ ! -f "${preprocess_fp}" || ! -f "${get_data_fp}" ]]; then
         return 0
     fi
 
-    ensure_command python3 python3
-    mkdir -p "${shim_dir}"
-    ln -snf "$(command -v python3)" "${shim_dir}/python"
-    export PATH="${shim_dir}:${PATH}"
-}
-
-patch_fid_for_modern_python() {
-    local preprocess_fp="$1/src/preprocess.py"
-
-    if [[ ! -f "${preprocess_fp}" ]]; then
-        return 0
-    fi
-
-    # The upstream FiD preprocessing script imports the removed stdlib
-    # module "parser", but never uses it.
-    PREPROCESS_FP="${preprocess_fp}" python3 - <<'PY'
+    FID_PREPROCESS_FP="${preprocess_fp}" FID_GET_DATA_FP="${get_data_fp}" FID_PYTHON_BIN="${PYTHON_BIN}" python3 - <<'PY'
 from pathlib import Path
 import os
+import re
 
-path = Path(os.environ["PREPROCESS_FP"])
-text = path.read_text(encoding="utf-8")
-patched = text.replace("import parser\n", "")
-if patched != text:
-    path.write_text(patched, encoding="utf-8")
+preprocess_path = Path(os.environ["FID_PREPROCESS_FP"])
+get_data_path = Path(os.environ["FID_GET_DATA_FP"])
+python_bin = os.environ["FID_PYTHON_BIN"]
+
+preprocess_text = preprocess_path.read_text(encoding="utf-8")
+patched_preprocess_text = preprocess_text.replace("import parser\n", "")
+if patched_preprocess_text != preprocess_text:
+    preprocess_path.write_text(patched_preprocess_text, encoding="utf-8")
+
+get_data_text = get_data_path.read_text(encoding="utf-8")
+patched_get_data_text = re.sub(
+    r'(^\s*)python\s+src/preprocess\.py\s+\$DOWNLOAD\s+\$ROOT\s*$',
+    rf'\1"{python_bin}" src/preprocess.py "$DOWNLOAD" "$ROOT"',
+    get_data_text,
+    flags=re.MULTILINE,
+)
+if patched_get_data_text != get_data_text:
+    get_data_path.write_text(patched_get_data_text, encoding="utf-8")
+PY
+}
+
+verify_python_environment() {
+    local python_bin="$1"
+
+    "${python_bin}" - <<'PY'
+import importlib
+import sys
+
+required_modules = [
+    "numpy",
+    "pandas",
+    "pyarrow",
+    "requests",
+    "torch",
+    "transformers",
+]
+
+missing = [name for name in required_modules if importlib.util.find_spec(name) is None]
+if missing:
+    raise SystemExit(f"Missing required Python modules: {', '.join(missing)}")
 PY
 }
 
@@ -103,9 +126,13 @@ fi
 export BLOCK_ATTENTION_CUDA_DEVICE="${CUDA_DEVICE}"
 
 ensure_command wget
-ensure_python_alias
 
 PYTHON_BIN="${VENV_DIR}/bin/python"
+
+if [[ "${INSTALL_DEPS}" -eq 0 && ! -x "${PYTHON_BIN}" ]]; then
+    echo "Expected virtualenv python at ${PYTHON_BIN}. Remove --skip-install or create the venv first." >&2
+    exit 1
+fi
 
 if [[ "${INSTALL_DEPS}" -eq 1 ]]; then
     uv venv --seed "${VENV_DIR}"
@@ -117,6 +144,7 @@ if [[ "${INSTALL_DEPS}" -eq 1 ]]; then
         flask-cors \
         huggingface_hub \
         ninja \
+        numpy \
         packaging \
         pandas \
         pyarrow \
@@ -137,6 +165,8 @@ if [[ "${INSTALL_DEPS}" -eq 1 ]]; then
     fi
 fi
 
+verify_python_environment "${PYTHON_BIN}"
+
 mkdir -p "${DATA_ROOT}/2wiki" "${DATA_ROOT}/hqa" "${DATA_ROOT}/nq" "${DATA_ROOT}/rag" "${DATA_ROOT}/tqa"
 
 if [[ ! -f "${DATA_ROOT}/2WikiMultihopQA/dev.parquet" ]]; then
@@ -152,7 +182,7 @@ fi
 if [[ ! -d "${DATA_ROOT}/FiD" ]]; then
     git clone https://github.com/facebookresearch/FiD "${DATA_ROOT}/FiD"
 fi
-patch_fid_for_modern_python "${DATA_ROOT}/FiD"
+patch_fid_for_local_env "${DATA_ROOT}/FiD"
 
 if [[ ! -f "${DATA_ROOT}/FiD/open_domain_data/NQ/test.json" || ! -f "${DATA_ROOT}/FiD/open_domain_data/TQA/test.json" ]]; then
     (
