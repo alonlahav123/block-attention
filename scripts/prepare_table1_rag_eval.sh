@@ -107,6 +107,25 @@ run_preprocessor_if_needed() {
     "$@"
 }
 
+resolve_2wiki_eval_fp() {
+    local data_root="$1"
+    local candidate
+
+    for candidate in \
+        "${data_root}/2WikiMultihopQA/dev.parquet" \
+        "${data_root}/2wiki/dev.parquet" \
+        "${data_root}/2wiki/2WikiMultihopQA/dev.parquet"
+    do
+        if [[ -f "${candidate}" ]]; then
+            echo "${candidate}"
+            return 0
+        fi
+    done
+
+    echo "Could not find 2Wiki dev parquet under ${data_root}." >&2
+    return 1
+}
+
 DATA_ROOT="${ROOT_DIR}/datahub"
 VENV_DIR="${ROOT_DIR}/.venv"
 INSTALL_DEPS=1
@@ -193,12 +212,12 @@ fi
 
 verify_python_environment "${PYTHON_BIN}"
 
-mkdir -p "${DATA_ROOT}/2wiki" "${DATA_ROOT}/hqa" "${DATA_ROOT}/nq" "${DATA_ROOT}/rag" "${DATA_ROOT}/tqa"
+mkdir -p "${DATA_ROOT}/hqa" "${DATA_ROOT}/nq" "${DATA_ROOT}/rag" "${DATA_ROOT}/tqa"
 
 if [[ ! -f "${DATA_ROOT}/2WikiMultihopQA/dev.parquet" ]]; then
     "${PYTHON_BIN}" -c "from huggingface_hub import snapshot_download; snapshot_download(repo_id='xanhho/2WikiMultihopQA', repo_type='dataset', local_dir='${DATA_ROOT}/2WikiMultihopQA')"
 fi
-ln -snf "${DATA_ROOT}/2WikiMultihopQA" "${DATA_ROOT}/2wiki"
+TWO_WIKI_EVAL_FP="$(resolve_2wiki_eval_fp "${DATA_ROOT}")"
 
 if [[ ! -f "${DATA_ROOT}/hqa/hotpot_dev_distractor_v1.json" ]]; then
     curl -L "http://curtis.ml.cmu.edu/datasets/hotpot/hotpot_dev_distractor_v1.json" \
@@ -237,7 +256,7 @@ run_preprocessor_if_needed "${DATA_ROOT}/rag/tqa_eval/dataset" \
 
 run_preprocessor_if_needed "${DATA_ROOT}/rag/2wiki_eval/dataset" \
     "${PYTHON_BIN}" data_process/rag/2wiki.py \
-    --eval_fp "${DATA_ROOT}/2wiki/dev.parquet" \
+    --eval_fp "${TWO_WIKI_EVAL_FP}" \
     --output_dir "${DATA_ROOT}/rag"
 
 echo "Prepared Table 1 RAG eval datasets under ${DATA_ROOT}/rag"
