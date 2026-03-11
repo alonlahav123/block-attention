@@ -180,7 +180,9 @@ if [[ "${INSTALL_DEPS}" -eq 0 && ! -x "${PYTHON_BIN}" ]]; then
 fi
 
 if [[ "${INSTALL_DEPS}" -eq 1 ]]; then
-    uv venv --seed "${VENV_DIR}"
+    if [[ ! -x "${PYTHON_BIN}" ]]; then
+        uv venv --seed "${VENV_DIR}"
+    fi
     uv pip install --python "${PYTHON_BIN}" --index-url "${TORCH_INDEX_URL}" "${TORCH_PACKAGE}"
     uv pip install --python "${PYTHON_BIN}" \
         accelerate \
