@@ -52,7 +52,7 @@ export BLOCK_ATTENTION_CUDA_DEVICE="${CUDA_DEVICE}"
 PYTHON_BIN="${VENV_DIR}/bin/python"
 
 if [[ "${INSTALL_DEPS}" -eq 1 ]]; then
-    uv venv "${VENV_DIR}"
+    uv venv --seed "${VENV_DIR}"
     uv pip install --python "${PYTHON_BIN}" --index-url "${TORCH_INDEX_URL}" "${TORCH_PACKAGE}"
     uv pip install --python "${PYTHON_BIN}" \
         accelerate \
@@ -73,6 +73,10 @@ if [[ "${INSTALL_DEPS}" -eq 1 ]]; then
         "transformers>=4.56"
 
     if [[ "${INSTALL_FLASH_ATTN}" == "1" ]]; then
+        uv pip install --python "${PYTHON_BIN}" \
+            pip \
+            setuptools \
+            wheel
         uv pip install --python "${PYTHON_BIN}" --no-build-isolation flash-attn
     fi
 fi
