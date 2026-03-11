@@ -1,8 +1,14 @@
 import json
+import sys
 import fire
 import torch
 from flask_cors import CORS
 from flask import Flask, request
+from pathlib import Path
+
+ROOT_DIR = Path(__file__).resolve().parents[1]
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
 from dataclasses import dataclass
 from typing import List, Optional, Tuple, TypedDict, Union
