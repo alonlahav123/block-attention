@@ -65,7 +65,6 @@ verify_python_environment() {
 
     "${python_bin}" - <<'PY'
 import importlib
-import sys
 
 required_modules = [
     "numpy",
@@ -76,9 +75,22 @@ required_modules = [
     "transformers",
 ]
 
-missing = [name for name in required_modules if importlib.util.find_spec(name) is None]
+missing = []
+for name in required_modules:
+    try:
+        importlib.import_module(name)
+    except ModuleNotFoundError:
+        missing.append(name)
+
 if missing:
     raise SystemExit(f"Missing required Python modules: {', '.join(missing)}")
+
+transformers = importlib.import_module("transformers")
+if transformers.__version__ != "4.56.2":
+    raise SystemExit(
+        f"Unsupported transformers version {transformers.__version__}. "
+        "Expected transformers==4.56.2 for this repo."
+    )
 PY
 }
 
@@ -154,7 +166,7 @@ if [[ "${INSTALL_DEPS}" -eq 1 ]]; then
         sentencepiece \
         tiktoken \
         tqdm \
-        "transformers>=4.56"
+        "transformers==4.56.2"
 
     if [[ "${INSTALL_FLASH_ATTN}" == "1" ]]; then
         uv pip install --python "${PYTHON_BIN}" \
