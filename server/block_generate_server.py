@@ -236,6 +236,35 @@ class Args:
     port: int
     dtype: str
     device: str = get_cuda_device()
+    attn_implementation: str = "auto"
+
+
+def load_model(args: Args):
+    attn_implementations = [args.attn_implementation]
+    if args.attn_implementation == "auto":
+        attn_implementations = ["flash_attention_2", "sdpa"]
+
+    last_error = None
+    for attn_implementation in attn_implementations:
+        try:
+            print(f"Loading model with attention implementation: {attn_implementation}", flush=True)
+            return AutoModelForCausalLM.from_pretrained(
+                pretrained_model_name_or_path=args.model,
+                dtype=torch.bfloat16,
+                device_map=args.device,
+                attn_implementation=attn_implementation
+            )
+        except Exception as exc:
+            last_error = exc
+            if args.attn_implementation != "auto":
+                raise
+            print(
+                f"Failed to load with {attn_implementation}: {exc}. "
+                "Falling back to the next attention implementation.",
+                flush=True,
+            )
+
+    raise last_error
 
 
 if __name__ == '__main__':
@@ -249,12 +278,7 @@ if __name__ == '__main__':
         data=[tokenizer.encode("[Block-Attention]", add_special_tokens=False)], dtype=torch.int64, device=args.device
     )
 
-    model = AutoModelForCausalLM.from_pretrained(
-        pretrained_model_name_or_path=args.model,
-        dtype=torch.bfloat16,
-        device_map=args.device,
-        attn_implementation="flash_attention_2"
-    )
+    model = load_model(args=args)
     model.eval()
     config: LlamaConfig = AutoConfig.from_pretrained(pretrained_model_name_or_path=args.model)
     emb: LlamaRotaryEmbedding = LlamaRotaryEmbedding(config=config).to(device=model.device, dtype=torch.float32)

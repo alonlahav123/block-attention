@@ -11,6 +11,7 @@ MODEL_SOURCE="ldsjmdy/Tulu3-Block-FT"
 OUTPUT_ROOT="${ROOT_DIR}/outputs/table1_block_ft"
 PORT=8080
 NUM_LOCAL_ATTENTION_BLOCKS=10000
+ATTN_IMPLEMENTATION="auto"
 VENV_DIR="${ROOT_DIR}/.venv"
 DATA_ROOT="${ROOT_DIR}/datahub"
 CUDA_VISIBLE_DEVICES_VALUE="${CUDA_VISIBLE_DEVICES:-}"
@@ -32,6 +33,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --num-local-attention-blocks)
             NUM_LOCAL_ATTENTION_BLOCKS="$2"
+            shift 2
+            ;;
+        --attn-implementation)
+            ATTN_IMPLEMENTATION="$2"
             shift 2
             ;;
         --venv)
@@ -91,12 +96,22 @@ else
 fi
 
 wait_for_server() {
-    for _ in $(seq 1 180); do
+    echo "Waiting for server on port ${PORT}. Log: ${SERVER_LOG}"
+    for attempt in $(seq 1 180); do
+        if ! kill -0 "${SERVER_PID}" >/dev/null 2>&1; then
+            echo "Server process exited before becoming healthy. See ${SERVER_LOG}" >&2
+            return 1
+        fi
         if "${PYTHON_BIN}" -c "import requests; requests.post('http://127.0.0.1:${PORT}/generate', json={'blocks': ['<|user|>\\nYou are an intelligent AI assistant. Please answer questions based on the user\\'s instructions. Below are some reference documents that may help you in answering the user\\'s question.\\n\\n', '- Title: Warmup\\nWarmup\\n', '\\n\\nPlease write a high-quality answer for the given question using only the provided search documents (some of which might be irrelevant).\\nQuestion: What is the title?\\n<|assistant|>\\n']}, timeout=10).raise_for_status()" >/dev/null 2>&1; then
+            echo "Server is healthy."
             return 0
+        fi
+        if (( attempt % 6 == 0 )); then
+            echo "Still waiting for server startup... (${attempt}/180)"
         fi
         sleep 10
     done
+    echo "Server did not become healthy within 30 minutes. See ${SERVER_LOG}" >&2
     return 1
 }
 
@@ -151,10 +166,15 @@ output_prefix.with_suffix(".md").write_text("\n".join(markdown_lines) + "\n", en
 PY
 }
 
-"${PYTHON_BIN}" server/block_generate_server.py --model "${MODEL_DIR}" --port "${PORT}" --dtype bfloat16 \
+"${PYTHON_BIN}" server/block_generate_server.py \
+    --model "${MODEL_DIR}" \
+    --port "${PORT}" \
+    --dtype bfloat16 \
+    --attn_implementation "${ATTN_IMPLEMENTATION}" \
     >"${SERVER_LOG}" 2>&1 &
 SERVER_PID=$!
 
+echo "Started server pid ${SERVER_PID}"
 wait_for_server
 
 mkdir -p "${OUTPUT_ROOT}/smoke/generated" "${OUTPUT_ROOT}/smoke/inputs" "${OUTPUT_ROOT}/generated"
