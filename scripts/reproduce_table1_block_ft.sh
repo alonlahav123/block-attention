@@ -82,6 +82,12 @@ trap cleanup EXIT
 
 mkdir -p "${OUTPUT_ROOT}" "${MODEL_CACHE_DIR}"
 
+INSTALL_FLASH_ATTN_VALUE="${INSTALL_FLASH_ATTN:-1}"
+if [[ "${ATTN_IMPLEMENTATION}" == "sdpa" ]]; then
+    INSTALL_FLASH_ATTN_VALUE=0
+fi
+
+export INSTALL_FLASH_ATTN="${INSTALL_FLASH_ATTN_VALUE}"
 bash "${ROOT_DIR}/scripts/prepare_table1_rag_eval.sh" \
     --data-root "${DATA_ROOT}" \
     --venv "${VENV_DIR}" \
@@ -94,6 +100,25 @@ else
         "${PYTHON_BIN}" -c "from huggingface_hub import snapshot_download; print(snapshot_download(repo_id='${MODEL_SOURCE}', local_dir='${MODEL_CACHE_DIR}/$(basename "${MODEL_SOURCE}")'))"
     )
 fi
+
+check_torch_cuda() {
+    "${PYTHON_BIN}" - <<'PY'
+import os
+import torch
+
+print(f"torch={torch.__version__} torch_cuda={torch.version.cuda}")
+print(f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')}")
+print(f"BLOCK_ATTENTION_CUDA_DEVICE={os.environ.get('BLOCK_ATTENTION_CUDA_DEVICE')}")
+print(f"torch.cuda.is_available()={torch.cuda.is_available()}")
+print(f"torch.cuda.device_count()={torch.cuda.device_count()}")
+
+if not torch.cuda.is_available():
+    raise SystemExit(
+        "PyTorch cannot access CUDA inside this container. "
+        "Check Docker GPU runtime setup or the host driver/runtime compatibility."
+    )
+PY
+}
 
 wait_for_server() {
     echo "Waiting for server on port ${PORT}. Log: ${SERVER_LOG}"
@@ -165,6 +190,8 @@ markdown_lines.append(f"| macro_average | - | {macro_average:.6f} |")
 output_prefix.with_suffix(".md").write_text("\n".join(markdown_lines) + "\n", encoding="utf-8")
 PY
 }
+
+check_torch_cuda
 
 "${PYTHON_BIN}" server/block_generate_server.py \
     --model "${MODEL_DIR}" \
