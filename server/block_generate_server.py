@@ -1,7 +1,9 @@
 import json
+import gc
 import sys
 import fire
 import torch
+import traceback
 from flask_cors import CORS
 from flask import Flask, request
 from pathlib import Path
@@ -37,6 +39,7 @@ SFTDataInstance = TypedDict("SFTDataInstance", {
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
+VERBOSE_PROMPTS = False
 
 
 def pkv_to_device(pkv: DynamicCache, device: Union[torch.device, str]) -> DynamicCache:
@@ -157,11 +160,12 @@ def build_block_past_key_values(
         instruction = "".join(blocks) + instruction
         blocks = []
 
-    print(f"Prompt | num local attention blocks: {num_local_attention_blocks}\n")
-    print(json.dumps({
-        "blocks": blocks,
-        "instruction_ans_response": instruction,
-    }, ensure_ascii=False, indent=4))
+    if VERBOSE_PROMPTS:
+        print(f"Prompt | num local attention blocks: {num_local_attention_blocks}\n")
+        print(json.dumps({
+            "blocks": blocks,
+            "instruction_ans_response": instruction,
+        }, ensure_ascii=False, indent=4))
 
     caches: List[DynamicCache] = []
     input_ids = None
@@ -216,18 +220,26 @@ def block_generate(
 
 @app.route('/generate', methods=['POST'])
 def _block_generate():
-    form = request.get_json()
-    generated = block_generate(
-        blocks=form["blocks"][:-1],
-        instruction=form["blocks"][-1],
-        generation_config=generation_config,
-        model=model,
-        emb=emb,
-        tokenizer=tokenizer,
-        num_local_attention_blocks=form.get("num_local_attention_blocks", 10000),
-    )
-    print("generated: ", generated)
-    return {"ret": 0, "generated": generated, "message": ""}
+    try:
+        form = request.get_json()
+        generated = block_generate(
+            blocks=form["blocks"][:-1],
+            instruction=form["blocks"][-1],
+            generation_config=generation_config,
+            model=model,
+            emb=emb,
+            tokenizer=tokenizer,
+            num_local_attention_blocks=form.get("num_local_attention_blocks", 10000),
+        )
+        print("generated: ", generated)
+        return {"ret": 0, "generated": generated, "message": ""}
+    except Exception as exc:
+        traceback.print_exc()
+        return {"ret": 1, "generated": "", "message": str(exc)}, 500
+    finally:
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
 
 @dataclass

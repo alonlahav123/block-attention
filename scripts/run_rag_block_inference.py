@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import sys
+import time
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
@@ -49,6 +50,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--server-url", required=True, type=str)
     parser.add_argument("--num-local-attention-blocks", default=10000, type=int)
     parser.add_argument("--timeout-seconds", default=600, type=int)
+    parser.add_argument("--max-retries", default=3, type=int)
+    parser.add_argument("--retry-sleep-seconds", default=10, type=int)
     return parser.parse_args()
 
 
@@ -68,20 +71,37 @@ def get_response(
     server_url: str,
     num_local_attention_blocks: int,
     timeout_seconds: int,
+    max_retries: int,
+    retry_sleep_seconds: int,
 ) -> str:
-    response = requests.post(
-        url=server_url,
-        json={
-            "blocks": build_rag_blocks(question=example["question"], documents=example["documents"]),
-            "num_local_attention_blocks": num_local_attention_blocks,
-        },
-        timeout=timeout_seconds,
-    )
-    response.raise_for_status()
-    payload = response.json()
-    if "generated" not in payload:
-        raise ValueError(f"Response payload is missing 'generated': {payload}")
-    return payload["generated"]
+    last_error: Exception | None = None
+    for attempt in range(1, max_retries + 1):
+        try:
+            response = requests.post(
+                url=server_url,
+                json={
+                    "blocks": build_rag_blocks(question=example["question"], documents=example["documents"]),
+                    "num_local_attention_blocks": num_local_attention_blocks,
+                },
+                timeout=timeout_seconds,
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if "generated" not in payload:
+                raise ValueError(f"Response payload is missing 'generated': {payload}")
+            return payload["generated"]
+        except (requests.RequestException, ValueError) as exc:
+            last_error = exc
+            question_preview = example["question"][:120].replace("\n", " ")
+            print(
+                f"Request failed on attempt {attempt}/{max_retries} for question: {question_preview}",
+                file=sys.stderr,
+                flush=True,
+            )
+            if attempt == max_retries:
+                break
+            time.sleep(retry_sleep_seconds)
+    raise RuntimeError(f"Failed after {max_retries} attempts") from last_error
 
 
 def main() -> None:
@@ -97,6 +117,8 @@ def main() -> None:
             server_url=args.server_url,
             num_local_attention_blocks=args.num_local_attention_blocks,
             timeout_seconds=args.timeout_seconds,
+            max_retries=args.max_retries,
+            retry_sleep_seconds=args.retry_sleep_seconds,
         )
         write_jsonline(fp=args.output, obj=records)
 
