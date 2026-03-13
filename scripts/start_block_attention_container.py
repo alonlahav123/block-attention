@@ -25,6 +25,8 @@ def main() -> None:
     root_dir = Path(args.workspace or Path(__file__).resolve().parents[1]).resolve()
     hf_cache = Path(args.hf_cache or Path.home() / ".cache" / "huggingface").resolve()
     uv_cache = Path(args.uv_cache or Path.home() / ".cache" / "uv").resolve()
+    local_uid = os.getuid()
+    local_gid = os.getgid()
 
     hf_cache.mkdir(parents=True, exist_ok=True)
     uv_cache.mkdir(parents=True, exist_ok=True)
@@ -51,10 +53,15 @@ def main() -> None:
         "--gpus", f"device={args.gpu}",
         "--name", args.name,
         "-v", f"{root_dir}:/workspace",
-        "-v", f"{hf_cache}:/root/.cache/huggingface",
-        "-v", f"{uv_cache}:/root/.cache/uv",
+        "-v", f"{hf_cache}:/cache/huggingface",
+        "-v", f"{uv_cache}:/cache/uv",
         "-e", "ENABLE_SSH=0",
         "-e", "BLOCK_ATTENTION_CUDA_DEVICE=cuda:0",
+        "-e", f"LOCAL_UID={local_uid}",
+        "-e", f"LOCAL_GID={local_gid}",
+        "-e", "HF_HOME=/cache/huggingface",
+        "-e", "HUGGINGFACE_HUB_CACHE=/cache/huggingface",
+        "-e", "UV_CACHE_DIR=/cache/uv",
         "-w", "/workspace",
         args.image,
         "bash", "-lc", "sleep infinity",

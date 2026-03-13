@@ -151,51 +151,6 @@ make_smoke_file() {
     "${PYTHON_BIN}" -c "import json; from pathlib import Path; lines = Path('${input_fp}').read_text(encoding='utf-8').splitlines()[:5]; Path('${output_fp}').parent.mkdir(parents=True, exist_ok=True); Path('${output_fp}').write_text(''.join(line + '\n' for line in lines), encoding='utf-8')"
 }
 
-run_eval_summary() {
-    local prefix="$1"
-    shift
-    "${PYTHON_BIN}" - "$prefix" "$@" <<'PY'
-import json
-import sys
-from pathlib import Path
-
-from rag_eval import evaluate_path
-
-output_prefix = Path(sys.argv[1])
-dataset_names = ["2wiki", "hqa", "nq", "tqa"]
-paths = sys.argv[2:]
-
-scores = {}
-for dataset_name, path in zip(dataset_names, paths):
-    result = evaluate_path(path)
-    scores[dataset_name] = {
-        "count": int(result["count"]),
-        "best_subspan_em": result["best_subspan_em"],
-    }
-
-macro_average = sum(item["best_subspan_em"] for item in scores.values()) / len(scores)
-summary = {
-    "datasets": scores,
-    "macro_average": macro_average,
-}
-
-output_prefix.parent.mkdir(parents=True, exist_ok=True)
-output_prefix.with_suffix(".json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-
-markdown_lines = [
-    "| Dataset | Count | best_subspan_em |",
-    "| --- | ---: | ---: |",
-]
-for dataset_name in dataset_names:
-    item = scores[dataset_name]
-    markdown_lines.append(
-        f"| {dataset_name} | {item['count']} | {item['best_subspan_em']:.6f} |"
-    )
-markdown_lines.append(f"| macro_average | - | {macro_average:.6f} |")
-output_prefix.with_suffix(".md").write_text("\n".join(markdown_lines) + "\n", encoding="utf-8")
-PY
-}
-
 check_torch_cuda
 
 "${PYTHON_BIN}" server/block_generate_server.py \
@@ -228,11 +183,12 @@ for dataset_name in 2wiki hqa nq tqa; do
         --num-local-attention-blocks "${NUM_LOCAL_ATTENTION_BLOCKS}"
 done
 
-run_eval_summary "${OUTPUT_ROOT}/smoke/results" \
-    "${OUTPUT_ROOT}/smoke/generated/2wiki.jsonl" \
-    "${OUTPUT_ROOT}/smoke/generated/hqa.jsonl" \
-    "${OUTPUT_ROOT}/smoke/generated/nq.jsonl" \
-    "${OUTPUT_ROOT}/smoke/generated/tqa.jsonl"
+"${PYTHON_BIN}" scripts/write_table1_summary.py \
+    --output-prefix "${OUTPUT_ROOT}/smoke/results" \
+    --2wiki "${OUTPUT_ROOT}/smoke/generated/2wiki.jsonl" \
+    --hqa "${OUTPUT_ROOT}/smoke/generated/hqa.jsonl" \
+    --nq "${OUTPUT_ROOT}/smoke/generated/nq.jsonl" \
+    --tqa "${OUTPUT_ROOT}/smoke/generated/tqa.jsonl"
 
 for dataset_name in 2wiki hqa nq tqa; do
     "${PYTHON_BIN}" scripts/run_rag_block_inference.py \
@@ -242,11 +198,12 @@ for dataset_name in 2wiki hqa nq tqa; do
         --num-local-attention-blocks "${NUM_LOCAL_ATTENTION_BLOCKS}"
 done
 
-run_eval_summary "${OUTPUT_ROOT}/results" \
-    "${OUTPUT_ROOT}/generated/2wiki.jsonl" \
-    "${OUTPUT_ROOT}/generated/hqa.jsonl" \
-    "${OUTPUT_ROOT}/generated/nq.jsonl" \
-    "${OUTPUT_ROOT}/generated/tqa.jsonl"
+"${PYTHON_BIN}" scripts/write_table1_summary.py \
+    --output-prefix "${OUTPUT_ROOT}/results" \
+    --2wiki "${OUTPUT_ROOT}/generated/2wiki.jsonl" \
+    --hqa "${OUTPUT_ROOT}/generated/hqa.jsonl" \
+    --nq "${OUTPUT_ROOT}/generated/nq.jsonl" \
+    --tqa "${OUTPUT_ROOT}/generated/tqa.jsonl"
 
 echo "Finished Table 1 Block-FT reproduction."
 echo "Smoke summary: ${OUTPUT_ROOT}/smoke/results.md"
