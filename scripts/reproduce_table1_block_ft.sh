@@ -12,6 +12,7 @@ OUTPUT_ROOT="${ROOT_DIR}/outputs/table1_block_ft"
 PORT=8080
 NUM_LOCAL_ATTENTION_BLOCKS=10000
 ATTN_IMPLEMENTATION="auto"
+MAX_NEW_TOKENS=256
 VENV_DIR="${ROOT_DIR}/.venv"
 DATA_ROOT="${ROOT_DIR}/datahub"
 CUDA_VISIBLE_DEVICES_VALUE="${CUDA_VISIBLE_DEVICES:-}"
@@ -37,6 +38,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --attn-implementation)
             ATTN_IMPLEMENTATION="$2"
+            shift 2
+            ;;
+        --max-new-tokens)
+            MAX_NEW_TOKENS="$2"
             shift 2
             ;;
         --venv)
@@ -83,7 +88,7 @@ trap cleanup EXIT
 mkdir -p "${OUTPUT_ROOT}" "${MODEL_CACHE_DIR}"
 
 INSTALL_FLASH_ATTN_VALUE="${INSTALL_FLASH_ATTN:-1}"
-if [[ "${ATTN_IMPLEMENTATION}" == "sdpa" ]]; then
+if [[ "${ATTN_IMPLEMENTATION}" != "auto" && "${ATTN_IMPLEMENTATION}" != "flash_attention_2" ]]; then
     INSTALL_FLASH_ATTN_VALUE=0
 fi
 
@@ -198,6 +203,7 @@ check_torch_cuda
     --port "${PORT}" \
     --dtype bfloat16 \
     --attn_implementation "${ATTN_IMPLEMENTATION}" \
+    --max_new_tokens "${MAX_NEW_TOKENS}" \
     >"${SERVER_LOG}" 2>&1 &
 SERVER_PID=$!
 

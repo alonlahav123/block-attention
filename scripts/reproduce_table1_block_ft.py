@@ -10,6 +10,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--port", type=int, default=8080)
     parser.add_argument("--num-local-attention-blocks", type=int, default=10000)
     parser.add_argument("--attn-implementation", default="auto")
+    parser.add_argument("--max-new-tokens", type=int, default=256)
     parser.add_argument("--venv", default=None)
     parser.add_argument("--data-root", default=None)
     return parser.parse_args()
@@ -30,6 +31,8 @@ def main() -> None:
         str(args.num_local_attention_blocks),
         "--attn-implementation",
         args.attn_implementation,
+        "--max-new-tokens",
+        str(args.max_new_tokens),
     ]
 
     if args.output_root is not None:

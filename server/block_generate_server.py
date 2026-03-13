@@ -212,8 +212,13 @@ def block_generate(
     input_length = input_ids.size(-1)
 
     outputs = model.generate(
-        input_ids=input_ids, generation_config=generation_config, past_key_values=past_key_values,
-        use_cache=True, eos_token_id=[tokenizer.eos_token_id], tokenizer=tokenizer
+        input_ids=input_ids,
+        attention_mask=torch.ones_like(input_ids, dtype=torch.int64),
+        generation_config=generation_config,
+        past_key_values=past_key_values,
+        use_cache=True,
+        eos_token_id=[tokenizer.eos_token_id],
+        tokenizer=tokenizer,
     )
     return tokenizer.decode(token_ids=outputs[0][input_length:].tolist())
 
@@ -249,6 +254,7 @@ class Args:
     dtype: str
     device: str = get_cuda_device()
     attn_implementation: str = "auto"
+    max_new_tokens: int = 256
 
 
 def load_model(args: Args):
@@ -302,7 +308,8 @@ if __name__ == '__main__':
         repetition_penalty=1.0,
         num_beams=1,
         eos_token_id=tokenizer.eos_token_id,
-        max_new_tokens=2048,
+        pad_token_id=tokenizer.eos_token_id,
+        max_new_tokens=args.max_new_tokens,
         stop_strings=['<|im_end|>', "<|eot_id|>", "<|end_of_text|>", "<|endoftext|>", "</s>", "Question:"]
     )
     app.run(host="0.0.0.0", port=args.port)
