@@ -1,0 +1,21 @@
+{
+  "datasets": {
+    "2wiki": {
+      "count": 12576,
+      "best_subspan_em": 0.6286577608142494
+    },
+    "hqa": {
+      "count": 7405,
+      "best_subspan_em": 0.6434841323430115
+    },
+    "nq": {
+      "count": 3610,
+      "best_subspan_em": 0.5382271468144044
+    },
+    "tqa": {
+      "count": 11313,
+      "best_subspan_em": 0.7293379298152568
+    }
+  },
+  "macro_average": 0.6349267424467305
+}
