@@ -12,6 +12,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--parallelism", default="data", choices=["data", "tensor"])
     parser.add_argument("--request-concurrency", type=int, default=None)
     parser.add_argument("--max-new-tokens", type=int, default=128)
+    parser.add_argument("--max-model-len", type=int, default=8192)
     parser.add_argument("--venv", default=None)
     parser.add_argument("--data-root", default=None)
     parser.add_argument("--server-backend", default="auto", choices=["auto", "repo", "upstream"])
@@ -38,6 +39,8 @@ def main() -> None:
         args.parallelism,
         "--max-new-tokens",
         str(args.max_new_tokens),
+        "--max-model-len",
+        str(args.max_model_len),
         "--server-backend",
         args.server_backend,
         "--benchmark-examples",

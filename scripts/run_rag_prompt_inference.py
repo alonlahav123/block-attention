@@ -126,6 +126,7 @@ def post_generate(server_url: str, payload: dict[str, Any], request_timeout: int
 
 def generate_example(
     *,
+    example_index: int,
     server_url: str,
     question: str,
     documents: list[dict[str, Any]],
@@ -155,7 +156,7 @@ def generate_example(
         except Exception as exc:
             last_error = exc
             print(
-                f"Request failed on attempt {attempt}/{max_retries} for question: {question}",
+                f"Request failed on attempt {attempt}/{max_retries} for example_index={example_index}: {question}",
                 flush=True,
             )
             if attempt < max_retries:
@@ -245,6 +246,7 @@ def main() -> None:
                     futures[
                         executor.submit(
                             generate_example,
+                            example_index=example_index,
                             server_url=args.server_url,
                             question=example["question"],
                             documents=example["documents"],

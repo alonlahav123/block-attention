@@ -14,6 +14,7 @@ GPU_IDS="0,1"
 PARALLELISM="data"
 REQUEST_CONCURRENCY=""
 MAX_NEW_TOKENS=128
+MAX_MODEL_LEN=8192
 VENV_DIR="${ROOT_DIR}/.venv-table1-vllm"
 DATA_ROOT="${ROOT_DIR}/datahub"
 SERVER_BACKEND="auto"
@@ -54,6 +55,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --max-new-tokens)
             MAX_NEW_TOKENS="$2"
+            shift 2
+            ;;
+        --max-model-len)
+            MAX_MODEL_LEN="$2"
             shift 2
             ;;
         --venv)
@@ -231,7 +236,7 @@ start_server_with_backend() {
         --dtype bfloat16
         --tokenizer-mode slow
         --tensor-parallel-size "${tp_size}"
-        --max-model-len 4096
+        --max-model-len "${MAX_MODEL_LEN}"
     )
     if [[ "${dp_size}" != "1" ]]; then
         base_args+=(--data-parallel-size "${dp_size}")
