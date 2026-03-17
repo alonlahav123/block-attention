@@ -116,7 +116,11 @@ def parse_generated_text(body: dict[str, Any], prompt: str) -> str:
 
 def post_generate(server_url: str, payload: dict[str, Any], request_timeout: int) -> Response:
     response = requests.post(server_url, json=payload, timeout=request_timeout)
-    response.raise_for_status()
+    if not response.ok:
+        body_preview = response.text[:1000]
+        raise RuntimeError(
+            f"Server returned HTTP {response.status_code}: {body_preview}"
+        )
     return response
 
 

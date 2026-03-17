@@ -138,7 +138,11 @@ gpu_count() {
 
 NUM_GPUS=$(gpu_count)
 if [[ -z "${REQUEST_CONCURRENCY}" ]]; then
-    REQUEST_CONCURRENCY="${NUM_GPUS}"
+    if [[ "${PARALLELISM}" == "tensor" ]]; then
+        REQUEST_CONCURRENCY=1
+    else
+        REQUEST_CONCURRENCY="${NUM_GPUS}"
+    fi
 fi
 
 if [[ "${PARALLELISM}" != "data" && "${PARALLELISM}" != "tensor" ]]; then
