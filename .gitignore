@@ -238,3 +238,17 @@ fabric.properties
 
 # Android studio 3.1+ serialized cache file
 .idea/caches/build_file_checksums.ser
+
+# Runtime artifacts
+.local/
+datahub/
+models/
+outputs/
+shard_runs/
+
+# Curated experiment summaries
+experiment_results/*
+!experiment_results/README.md
+!experiment_results/*/
+!experiment_results/*/results.md
+!experiment_results/*/results.json
