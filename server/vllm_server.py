@@ -56,10 +56,13 @@ async def _generate(request_dict: dict, raw_request: Request) -> Response:
     prompt = request_dict.pop("prompt")
     stream = request_dict.pop("stream", False)
     sampling_params = SamplingParams(
-        n=1,
-        temperature=0.0,
-        stop=["<|end_of_text|>", "<|im_end|>", "<|eot_id|>", "<|eodoftext|>", "</s>", "Question"],
-        max_tokens=2048
+        n=request_dict.pop("n", 1),
+        temperature=request_dict.pop("temperature", 0.0),
+        stop=request_dict.pop(
+            "stop",
+            ["<|end_of_text|>", "<|im_end|>", "<|eot_id|>", "<|eodoftext|>", "</s>", "Question"],
+        ),
+        max_tokens=request_dict.pop("max_tokens", 2048),
     )
     request_id = random_uuid()
 

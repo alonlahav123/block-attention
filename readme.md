@@ -290,6 +290,52 @@ r = requests.post(
 print(r.json()["generated"])
 ```
 
+For the Table 1 `Tulu3-Block-FT` reproduction flow, you can use the helper script:
+
+```bash
+python3 scripts/reproduce_table1_block_ft.py \
+  --model ldsjmdy/Tulu3-Block-FT \
+  --attn-implementation eager \
+  --max-new-tokens 128
+```
+
+For the Table 1 `Tulu3-RAG` baseline, use the vLLM-based runner. This path keeps the standard full-attention model and lets vLLM handle multi-GPU parallelism behind a single endpoint:
+
+```bash
+python3 scripts/reproduce_table1_rag_baseline.py \
+  --model ldsjmdy/Tulu3-RAG \
+  --gpu-ids 0,1 \
+  --parallelism data \
+  --max-new-tokens 128 \
+  --output-root shard_runs/tulu3_rag_vllm_dp2
+```
+
+Examples for larger GPU counts:
+
+```bash
+python3 scripts/reproduce_table1_rag_baseline.py \
+  --model ldsjmdy/Tulu3-RAG \
+  --gpu-ids 0,1,2,3 \
+  --parallelism data \
+  --max-new-tokens 128 \
+  --output-root shard_runs/tulu3_rag_vllm_dp4
+```
+
+```bash
+python3 scripts/reproduce_table1_rag_baseline.py \
+  --model ldsjmdy/Tulu3-RAG \
+  --gpu-ids 0,1,2,3,4,5,6,7 \
+  --parallelism data \
+  --max-new-tokens 128 \
+  --output-root shard_runs/tulu3_rag_vllm_dp8
+```
+
+Notes:
+
+- Always use a fresh `--output-root` for a new run.
+- If you need to continue an interrupted run, reuse the same output root with `--resume`.
+- The baseline runner also supports `--parallelism tensor` and `--benchmark-parallelism` if you want to compare tensor parallel against data parallel on a small subset first.
+
 ### 📈 Evaluation
 
 1. Evaluation on RAG benchmarks

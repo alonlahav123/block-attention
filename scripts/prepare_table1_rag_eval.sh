@@ -64,8 +64,9 @@ PY
 verify_python_environment() {
     local python_bin="$1"
 
-    "${python_bin}" - <<'PY'
+    INSTALL_VLLM_VALUE="${INSTALL_VLLM}" "${python_bin}" - <<'PY'
 import importlib
+import os
 
 required_modules = [
     "numpy",
@@ -92,6 +93,12 @@ if transformers.__version__ != "4.56.2":
         f"Unsupported transformers version {transformers.__version__}. "
         "Expected transformers==4.56.2 for this repo."
     )
+
+if os.environ["INSTALL_VLLM_VALUE"] == "1":
+    try:
+        importlib.import_module("vllm")
+    except ModuleNotFoundError as exc:
+        raise SystemExit("Missing required Python module: vllm") from exc
 PY
 }
 
@@ -130,6 +137,7 @@ DATA_ROOT="${ROOT_DIR}/datahub"
 VENV_DIR="${ROOT_DIR}/.venv"
 INSTALL_DEPS=1
 INSTALL_FLASH_ATTN="${INSTALL_FLASH_ATTN:-1}"
+INSTALL_VLLM="${INSTALL_VLLM:-0}"
 TORCH_INDEX_URL="${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cu124}"
 TORCH_PACKAGE="${TORCH_PACKAGE:-torch==2.6.0}"
 FORCE_PREPROCESS="${FORCE_PREPROCESS:-0}"
@@ -209,6 +217,10 @@ if [[ "${INSTALL_DEPS}" -eq 1 ]]; then
             setuptools \
             wheel
         uv pip install --python "${PYTHON_BIN}" --no-build-isolation flash-attn
+    fi
+
+    if [[ "${INSTALL_VLLM}" == "1" ]]; then
+        uv pip install --python "${PYTHON_BIN}" vllm
     fi
 fi
 
