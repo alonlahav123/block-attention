@@ -94,7 +94,7 @@ def make_absolute_section(rows: dict[str, dict[str, float]]) -> tuple[str, list[
     return "Absolute Scores", ["Run", "2wiki", "HQA", "NQ", "TQA", "Macro"], section_rows
 
 
-def make_rag_vs_block_delta_section(
+def make_block_vs_rag_delta_section(
     local_rows: dict[str, dict[str, float]]
 ) -> tuple[str, list[str], list[list[str]]] | None:
     local_block = find_matching_row(local_rows, "block")
@@ -108,24 +108,24 @@ def make_rag_vs_block_delta_section(
     paper_rag_scores = PAPER_ROWS["Tulu3-RAG (paper)"]
 
     return (
-        "RAG - Block-FT Delta",
+        "Block-FT - RAG Delta",
         ["Source", "2wiki", "HQA", "NQ", "TQA", "Macro"],
         [
             [
                 "Your Runs",
-                f"{(local_rag_scores['2wiki'] - local_block_scores['2wiki']) * 100:+.2f}",
-                f"{(local_rag_scores['hqa'] - local_block_scores['hqa']) * 100:+.2f}",
-                f"{(local_rag_scores['nq'] - local_block_scores['nq']) * 100:+.2f}",
-                f"{(local_rag_scores['tqa'] - local_block_scores['tqa']) * 100:+.2f}",
-                f"{(local_rag_scores['macro_average'] - local_block_scores['macro_average']) * 100:+.2f}",
+                f"{(local_block_scores['2wiki'] - local_rag_scores['2wiki']) * 100:+.2f}",
+                f"{(local_block_scores['hqa'] - local_rag_scores['hqa']) * 100:+.2f}",
+                f"{(local_block_scores['nq'] - local_rag_scores['nq']) * 100:+.2f}",
+                f"{(local_block_scores['tqa'] - local_rag_scores['tqa']) * 100:+.2f}",
+                f"{(local_block_scores['macro_average'] - local_rag_scores['macro_average']) * 100:+.2f}",
             ],
             [
                 "Paper",
-                f"{(paper_rag_scores['2wiki'] - paper_block_scores['2wiki']) * 100:+.2f}",
-                f"{(paper_rag_scores['hqa'] - paper_block_scores['hqa']) * 100:+.2f}",
-                f"{(paper_rag_scores['nq'] - paper_block_scores['nq']) * 100:+.2f}",
-                f"{(paper_rag_scores['tqa'] - paper_block_scores['tqa']) * 100:+.2f}",
-                f"{(paper_rag_scores['macro_average'] - paper_block_scores['macro_average']) * 100:+.2f}",
+                f"{(paper_block_scores['2wiki'] - paper_rag_scores['2wiki']) * 100:+.2f}",
+                f"{(paper_block_scores['hqa'] - paper_rag_scores['hqa']) * 100:+.2f}",
+                f"{(paper_block_scores['nq'] - paper_rag_scores['nq']) * 100:+.2f}",
+                f"{(paper_block_scores['tqa'] - paper_rag_scores['tqa']) * 100:+.2f}",
+                f"{(paper_block_scores['macro_average'] - paper_rag_scores['macro_average']) * 100:+.2f}",
             ],
         ],
     )
@@ -204,9 +204,9 @@ def main() -> None:
         make_absolute_section(all_rows)
     ]
 
-    rag_vs_block_delta = make_rag_vs_block_delta_section(local_rows)
-    if rag_vs_block_delta is not None:
-        sections.append(rag_vs_block_delta)
+    block_vs_rag_delta = make_block_vs_rag_delta_section(local_rows)
+    if block_vs_rag_delta is not None:
+        sections.append(block_vs_rag_delta)
 
     markdown = render_sections_markdown(sections)
     plain = render_sections_plain(sections)
