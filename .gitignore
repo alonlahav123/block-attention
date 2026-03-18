@@ -245,10 +245,3 @@ datahub/
 models/
 outputs/
 shard_runs/
-
-# Curated experiment summaries
-experiment_results/*
-!experiment_results/README.md
-!experiment_results/*/
-!experiment_results/*/results.md
-!experiment_results/*/results.json
