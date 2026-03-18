@@ -69,6 +69,15 @@ def paper_target_for_label(label: str) -> str | None:
     return None
 
 
+def find_matching_row(
+    rows: dict[str, dict[str, float]], keyword: str
+) -> tuple[str, dict[str, float]] | None:
+    for label, scores in rows.items():
+        if keyword in label.lower():
+            return label, scores
+    return None
+
+
 def make_absolute_section(rows: dict[str, dict[str, float]]) -> tuple[str, list[str], list[list[str]]]:
     section_rows: list[list[str]] = []
     for label, scores in rows.items():
@@ -85,54 +94,40 @@ def make_absolute_section(rows: dict[str, dict[str, float]]) -> tuple[str, list[
     return "Absolute Scores", ["Run", "2wiki", "HQA", "NQ", "TQA", "Macro"], section_rows
 
 
-def make_delta_vs_paper_section(
+def make_rag_vs_block_delta_section(
     local_rows: dict[str, dict[str, float]]
 ) -> tuple[str, list[str], list[list[str]]] | None:
-    section_rows: list[list[str]] = []
-    for label, scores in local_rows.items():
-        target_label = paper_target_for_label(label)
-        if target_label is None:
-            continue
-        paper_scores = PAPER_ROWS[target_label]
-        section_rows.append(
+    local_block = find_matching_row(local_rows, "block")
+    local_rag = find_matching_row(local_rows, "rag")
+    if local_block is None or local_rag is None:
+        return None
+
+    _, local_block_scores = local_block
+    _, local_rag_scores = local_rag
+    paper_block_scores = PAPER_ROWS["Tulu3-Block-FT (paper)"]
+    paper_rag_scores = PAPER_ROWS["Tulu3-RAG (paper)"]
+
+    return (
+        "RAG - Block-FT Delta",
+        ["Source", "2wiki", "HQA", "NQ", "TQA", "Macro"],
+        [
             [
-                label,
-                target_label,
-                f"{(scores['2wiki'] - paper_scores['2wiki']) * 100:+.2f}",
-                f"{(scores['hqa'] - paper_scores['hqa']) * 100:+.2f}",
-                f"{(scores['nq'] - paper_scores['nq']) * 100:+.2f}",
-                f"{(scores['tqa'] - paper_scores['tqa']) * 100:+.2f}",
-                f"{(scores['macro_average'] - paper_scores['macro_average']) * 100:+.2f}",
-            ]
-        )
-    if not section_rows:
-        return None
-    return (
-        "Delta Vs Paper",
-        ["Run", "Paper Target", "2wiki", "HQA", "NQ", "TQA", "Macro"],
-        section_rows,
-    )
-
-
-def make_pairwise_delta_section(
-    local_rows: dict[str, dict[str, float]]
-) -> tuple[str, list[str], list[list[str]]] | None:
-    labels = list(local_rows.keys())
-    if len(labels) != 2:
-        return None
-    left, right = labels
-    left_scores = local_rows[left]
-    right_scores = local_rows[right]
-    return (
-        f"Delta: {right} - {left}",
-        ["2wiki", "HQA", "NQ", "TQA", "Macro"],
-        [[
-            f"{(right_scores['2wiki'] - left_scores['2wiki']) * 100:+.2f}",
-            f"{(right_scores['hqa'] - left_scores['hqa']) * 100:+.2f}",
-            f"{(right_scores['nq'] - left_scores['nq']) * 100:+.2f}",
-            f"{(right_scores['tqa'] - left_scores['tqa']) * 100:+.2f}",
-            f"{(right_scores['macro_average'] - left_scores['macro_average']) * 100:+.2f}",
-        ]],
+                "Your Runs",
+                f"{(local_rag_scores['2wiki'] - local_block_scores['2wiki']) * 100:+.2f}",
+                f"{(local_rag_scores['hqa'] - local_block_scores['hqa']) * 100:+.2f}",
+                f"{(local_rag_scores['nq'] - local_block_scores['nq']) * 100:+.2f}",
+                f"{(local_rag_scores['tqa'] - local_block_scores['tqa']) * 100:+.2f}",
+                f"{(local_rag_scores['macro_average'] - local_block_scores['macro_average']) * 100:+.2f}",
+            ],
+            [
+                "Paper",
+                f"{(paper_rag_scores['2wiki'] - paper_block_scores['2wiki']) * 100:+.2f}",
+                f"{(paper_rag_scores['hqa'] - paper_block_scores['hqa']) * 100:+.2f}",
+                f"{(paper_rag_scores['nq'] - paper_block_scores['nq']) * 100:+.2f}",
+                f"{(paper_rag_scores['tqa'] - paper_block_scores['tqa']) * 100:+.2f}",
+                f"{(paper_rag_scores['macro_average'] - paper_block_scores['macro_average']) * 100:+.2f}",
+            ],
+        ],
     )
 
 
@@ -209,13 +204,9 @@ def main() -> None:
         make_absolute_section(all_rows)
     ]
 
-    delta_vs_paper = make_delta_vs_paper_section(local_rows)
-    if delta_vs_paper is not None:
-        sections.append(delta_vs_paper)
-
-    pairwise_delta = make_pairwise_delta_section(local_rows)
-    if pairwise_delta is not None:
-        sections.append(pairwise_delta)
+    rag_vs_block_delta = make_rag_vs_block_delta_section(local_rows)
+    if rag_vs_block_delta is not None:
+        sections.append(rag_vs_block_delta)
 
     markdown = render_sections_markdown(sections)
     plain = render_sections_plain(sections)
