@@ -1,0 +1,527 @@
+{
+  "rag_model": "ldsjmdy/Tulu3-RAG",
+  "block_model": "ldsjmdy/Tulu3-Block-FT",
+  "output_root": "/home/alon/cse240-project-block-attention/Block-Attention/outputs/synthetic_ttft_table3_sweep_gpu4",
+  "shared_attn_implementation": "sdpa",
+  "user_input_tokens": 50,
+  "num_documents": 8,
+  "warmup_iters": 2,
+  "measure_iters": 5,
+  "seed": 0,
+  "paper_table3": [
+    {
+      "label": "50",
+      "ttft_vanilla_ms": 26,
+      "ttft_block_ms": 26
+    },
+    {
+      "label": "512",
+      "ttft_vanilla_ms": 50,
+      "ttft_block_ms": 26
+    },
+    {
+      "label": "1K",
+      "ttft_vanilla_ms": 87,
+      "ttft_block_ms": 26
+    },
+    {
+      "label": "2K",
+      "ttft_vanilla_ms": 167,
+      "ttft_block_ms": 26
+    },
+    {
+      "label": "4K",
+      "ttft_vanilla_ms": 330,
+      "ttft_block_ms": 27
+    },
+    {
+      "label": "8K",
+      "ttft_vanilla_ms": 691,
+      "ttft_block_ms": 29
+    },
+    {
+      "label": "16K",
+      "ttft_vanilla_ms": 1515,
+      "ttft_block_ms": 34
+    },
+    {
+      "label": "32K",
+      "ttft_vanilla_ms": 3638,
+      "ttft_block_ms": 45
+    }
+  ],
+  "runs": [
+    {
+      "label": "50",
+      "target_passage_tokens": 50,
+      "output_dir": "/home/alon/cse240-project-block-attention/Block-Attention/outputs/synthetic_ttft_table3_sweep_gpu4/passage_50",
+      "summary": {
+        "shared_attn_implementation": "sdpa",
+        "user_input_tokens": 50,
+        "target_prompt_tokens": null,
+        "target_passage_tokens": 50,
+        "effective_target_prompt_tokens": null,
+        "rag_prompt_tokens": 319,
+        "block_prompt_tokens": 316,
+        "actual_passage_tokens": 98,
+        "num_documents": 8,
+        "rag": {
+          "prompt_tokens": 319,
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.018857222801307215,
+            "median_seconds": 0.01886375100002624,
+            "p95_seconds": 0.018981792003614828
+          }
+        },
+        "block_precached": {
+          "prompt_tokens": 316,
+          "precache_timing": {
+            "count": 5,
+            "mean_seconds": 0.18536864320049062,
+            "median_seconds": 0.18528000402147882,
+            "p95_seconds": 0.18572691100416705
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.04432614681427367,
+            "median_seconds": 0.043181522021768615,
+            "p95_seconds": 0.04676603100961074
+          }
+        },
+        "block_cache_ready": {
+          "prompt_tokens": 316,
+          "cache_ready_build_timing": {
+            "count": 5,
+            "mean_seconds": 0.1869674694025889,
+            "median_seconds": 0.1865246829984244,
+            "p95_seconds": 0.1900981530197896
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.023119310999754818,
+            "median_seconds": 0.02296645799651742,
+            "p95_seconds": 0.023440196993760765
+          }
+        },
+        "median_speedup_rag_over_block_precached": 0.4368477560961531,
+        "mean_speedup_rag_over_block_precached": 0.42541985163562446,
+        "median_speedup_rag_over_block_cache_ready": 0.8213609169897551,
+        "mean_speedup_rag_over_block_cache_ready": 0.8156481307555921
+      }
+    },
+    {
+      "label": "512",
+      "target_passage_tokens": 512,
+      "output_dir": "/home/alon/cse240-project-block-attention/Block-Attention/outputs/synthetic_ttft_table3_sweep_gpu4/passage_512",
+      "summary": {
+        "shared_attn_implementation": "sdpa",
+        "user_input_tokens": 50,
+        "target_prompt_tokens": null,
+        "target_passage_tokens": 512,
+        "effective_target_prompt_tokens": null,
+        "rag_prompt_tokens": 758,
+        "block_prompt_tokens": 754,
+        "actual_passage_tokens": 537,
+        "num_documents": 8,
+        "rag": {
+          "prompt_tokens": 758,
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.02985341799794696,
+            "median_seconds": 0.029863750998629257,
+            "p95_seconds": 0.029881572991143912
+          }
+        },
+        "block_precached": {
+          "prompt_tokens": 754,
+          "precache_timing": {
+            "count": 5,
+            "mean_seconds": 0.18740880399709567,
+            "median_seconds": 0.18700967097538523,
+            "p95_seconds": 0.188293823011918
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.043981338595040144,
+            "median_seconds": 0.043262612976832315,
+            "p95_seconds": 0.04747667198535055
+          }
+        },
+        "block_cache_ready": {
+          "prompt_tokens": 754,
+          "cache_ready_build_timing": {
+            "count": 5,
+            "mean_seconds": 0.1895883179968223,
+            "median_seconds": 0.1896682659862563,
+            "p95_seconds": 0.18989827000768855
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.023403837595833466,
+            "median_seconds": 0.02334494498791173,
+            "p95_seconds": 0.023762420983985066
+          }
+        },
+        "median_speedup_rag_over_block_precached": 0.6902900436139093,
+        "mean_speedup_rag_over_block_precached": 0.6787746565156519,
+        "median_speedup_rag_over_block_cache_ready": 1.2792384395890861,
+        "mean_speedup_rag_over_block_cache_ready": 1.2755778993809843
+      }
+    },
+    {
+      "label": "1K",
+      "target_passage_tokens": 1024,
+      "output_dir": "/home/alon/cse240-project-block-attention/Block-Attention/outputs/synthetic_ttft_table3_sweep_gpu4/passage_1024",
+      "summary": {
+        "shared_attn_implementation": "sdpa",
+        "user_input_tokens": 50,
+        "target_prompt_tokens": null,
+        "target_passage_tokens": 1024,
+        "effective_target_prompt_tokens": null,
+        "rag_prompt_tokens": 1267,
+        "block_prompt_tokens": 1263,
+        "actual_passage_tokens": 1046,
+        "num_documents": 8,
+        "rag": {
+          "prompt_tokens": 1267,
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.044676488207187504,
+            "median_seconds": 0.04474671802017838,
+            "p95_seconds": 0.04494117002468556
+          }
+        },
+        "block_precached": {
+          "prompt_tokens": 1263,
+          "precache_timing": {
+            "count": 5,
+            "mean_seconds": 0.19070548160234466,
+            "median_seconds": 0.18939111998770386,
+            "p95_seconds": 0.19653330801520497
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.04337171240476891,
+            "median_seconds": 0.04333770400262438,
+            "p95_seconds": 0.04356972800451331
+          }
+        },
+        "block_cache_ready": {
+          "prompt_tokens": 1263,
+          "cache_ready_build_timing": {
+            "count": 5,
+            "mean_seconds": 0.19299690940533765,
+            "median_seconds": 0.19274384499294683,
+            "p95_seconds": 0.19588586702593602
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.023550683999201284,
+            "median_seconds": 0.02347072699922137,
+            "p95_seconds": 0.023885353992227465
+          }
+        },
+        "median_speedup_rag_over_block_precached": 1.0325124288418388,
+        "mean_speedup_rag_over_block_precached": 1.0300835666860857,
+        "median_speedup_rag_over_block_cache_ready": 1.9064904986395534,
+        "mean_speedup_rag_over_block_cache_ready": 1.8970356958083552
+      }
+    },
+    {
+      "label": "2K",
+      "target_passage_tokens": 2048,
+      "output_dir": "/home/alon/cse240-project-block-attention/Block-Attention/outputs/synthetic_ttft_table3_sweep_gpu4/passage_2048",
+      "summary": {
+        "shared_attn_implementation": "sdpa",
+        "user_input_tokens": 50,
+        "target_prompt_tokens": null,
+        "target_passage_tokens": 2048,
+        "effective_target_prompt_tokens": null,
+        "rag_prompt_tokens": 2298,
+        "block_prompt_tokens": 2294,
+        "actual_passage_tokens": 2077,
+        "num_documents": 8,
+        "rag": {
+          "prompt_tokens": 2298,
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.07886026699561625,
+            "median_seconds": 0.07886980997864157,
+            "p95_seconds": 0.07893663999857381
+          }
+        },
+        "block_precached": {
+          "prompt_tokens": 2294,
+          "precache_timing": {
+            "count": 5,
+            "mean_seconds": 0.19102084480109624,
+            "median_seconds": 0.19063435099087656,
+            "p95_seconds": 0.1933244650135748
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.0430247125972528,
+            "median_seconds": 0.04284585500136018,
+            "p95_seconds": 0.043752139987191185
+          }
+        },
+        "block_cache_ready": {
+          "prompt_tokens": 2294,
+          "cache_ready_build_timing": {
+            "count": 5,
+            "mean_seconds": 0.19708174219704233,
+            "median_seconds": 0.19733932000235654,
+            "p95_seconds": 0.1977685680030845
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.023575254599563777,
+            "median_seconds": 0.02351108699804172,
+            "p95_seconds": 0.023843122995458543
+          }
+        },
+        "median_speedup_rag_over_block_precached": 1.8407803969867746,
+        "mean_speedup_rag_over_block_precached": 1.832906305123154,
+        "median_speedup_rag_over_block_cache_ready": 3.3545794792563517,
+        "mean_speedup_rag_over_block_cache_ready": 3.3450441293251374
+      }
+    },
+    {
+      "label": "4K",
+      "target_passage_tokens": 4096,
+      "output_dir": "/home/alon/cse240-project-block-attention/Block-Attention/outputs/synthetic_ttft_table3_sweep_gpu4/passage_4096",
+      "summary": {
+        "shared_attn_implementation": "sdpa",
+        "user_input_tokens": 50,
+        "target_prompt_tokens": null,
+        "target_passage_tokens": 4096,
+        "effective_target_prompt_tokens": null,
+        "rag_prompt_tokens": 4348,
+        "block_prompt_tokens": 4344,
+        "actual_passage_tokens": 4127,
+        "num_documents": 8,
+        "rag": {
+          "prompt_tokens": 4348,
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.153949225199176,
+            "median_seconds": 0.15143655400606804,
+            "p95_seconds": 0.15924436200293712
+          }
+        },
+        "block_precached": {
+          "prompt_tokens": 4344,
+          "precache_timing": {
+            "count": 5,
+            "mean_seconds": 0.2555759310082067,
+            "median_seconds": 0.2545761820219923,
+            "p95_seconds": 0.25959328599856235
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.04623837960534729,
+            "median_seconds": 0.04631297301966697,
+            "p95_seconds": 0.04665730899432674
+          }
+        },
+        "block_cache_ready": {
+          "prompt_tokens": 4344,
+          "cache_ready_build_timing": {
+            "count": 5,
+            "mean_seconds": 0.25921168619534,
+            "median_seconds": 0.2584956460050307,
+            "p95_seconds": 0.26324953499715775
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.026310829393332825,
+            "median_seconds": 0.02620928199030459,
+            "p95_seconds": 0.02654890698613599
+          }
+        },
+        "median_speedup_rag_over_block_precached": 3.2698517096227,
+        "mean_speedup_rag_over_block_precached": 3.3294684310557536,
+        "median_speedup_rag_over_block_cache_ready": 5.77797415671623,
+        "mean_speedup_rag_over_block_cache_ready": 5.851173404597683
+      }
+    },
+    {
+      "label": "8K",
+      "target_passage_tokens": 8192,
+      "output_dir": "/home/alon/cse240-project-block-attention/Block-Attention/outputs/synthetic_ttft_table3_sweep_gpu4/passage_8192",
+      "summary": {
+        "shared_attn_implementation": "sdpa",
+        "user_input_tokens": 50,
+        "target_prompt_tokens": null,
+        "target_passage_tokens": 8192,
+        "effective_target_prompt_tokens": null,
+        "rag_prompt_tokens": 8441,
+        "block_prompt_tokens": 8437,
+        "actual_passage_tokens": 8220,
+        "num_documents": 8,
+        "rag": {
+          "prompt_tokens": 8441,
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.31545595040079205,
+            "median_seconds": 0.3144538580090739,
+            "p95_seconds": 0.32204434301820584
+          }
+        },
+        "block_precached": {
+          "prompt_tokens": 8437,
+          "precache_timing": {
+            "count": 5,
+            "mean_seconds": 0.3684900314023253,
+            "median_seconds": 0.36774238498765044,
+            "p95_seconds": 0.3717847620137036
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.05944573460146785,
+            "median_seconds": 0.059494449000339955,
+            "p95_seconds": 0.059678043005988
+          }
+        },
+        "block_cache_ready": {
+          "prompt_tokens": 8437,
+          "cache_ready_build_timing": {
+            "count": 5,
+            "mean_seconds": 0.37601356200757435,
+            "median_seconds": 0.3760867410164792,
+            "p95_seconds": 0.37645328798680566
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.036372873198706655,
+            "median_seconds": 0.03640669898595661,
+            "p95_seconds": 0.03649050201056525
+          }
+        },
+        "median_speedup_rag_over_block_precached": 5.285431889742807,
+        "mean_speedup_rag_over_block_precached": 5.306620441578373,
+        "median_speedup_rag_over_block_cache_ready": 8.637252669635613,
+        "mean_speedup_rag_over_block_cache_ready": 8.672835623335057
+      }
+    },
+    {
+      "label": "16K",
+      "target_passage_tokens": 16384,
+      "output_dir": "/home/alon/cse240-project-block-attention/Block-Attention/outputs/synthetic_ttft_table3_sweep_gpu4/passage_16384",
+      "summary": {
+        "shared_attn_implementation": "sdpa",
+        "user_input_tokens": 50,
+        "target_prompt_tokens": null,
+        "target_passage_tokens": 16384,
+        "effective_target_prompt_tokens": null,
+        "rag_prompt_tokens": 16633,
+        "block_prompt_tokens": 16629,
+        "actual_passage_tokens": 16412,
+        "num_documents": 8,
+        "rag": {
+          "prompt_tokens": 16633,
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.7123696188034956,
+            "median_seconds": 0.7118260090064723,
+            "p95_seconds": 0.7160316770023201
+          }
+        },
+        "block_precached": {
+          "prompt_tokens": 16629,
+          "precache_timing": {
+            "count": 5,
+            "mean_seconds": 0.6335424581950064,
+            "median_seconds": 0.6335162580071483,
+            "p95_seconds": 0.6353650579985697
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.08741140880738385,
+            "median_seconds": 0.08737697801552713,
+            "p95_seconds": 0.08783052500803024
+          }
+        },
+        "block_cache_ready": {
+          "prompt_tokens": 16629,
+          "cache_ready_build_timing": {
+            "count": 5,
+            "mean_seconds": 0.6503641775925644,
+            "median_seconds": 0.6502519819769077,
+            "p95_seconds": 0.653020886995364
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.057172985002398494,
+            "median_seconds": 0.057295213016914204,
+            "p95_seconds": 0.057409054978052154
+          }
+        },
+        "median_speedup_rag_over_block_precached": 8.146608239071611,
+        "mean_speedup_rag_over_block_precached": 8.149618322400498,
+        "median_speedup_rag_over_block_cache_ready": 12.423830395679532,
+        "mean_speedup_rag_over_block_cache_ready": 12.459899002537835
+      }
+    },
+    {
+      "label": "32K",
+      "target_passage_tokens": 32000,
+      "output_dir": "/home/alon/cse240-project-block-attention/Block-Attention/outputs/synthetic_ttft_table3_sweep_gpu4/passage_32000",
+      "summary": {
+        "shared_attn_implementation": "sdpa",
+        "user_input_tokens": 50,
+        "target_prompt_tokens": null,
+        "target_passage_tokens": 32000,
+        "effective_target_prompt_tokens": null,
+        "rag_prompt_tokens": 32261,
+        "block_prompt_tokens": 32257,
+        "actual_passage_tokens": 32040,
+        "num_documents": 8,
+        "rag": {
+          "prompt_tokens": 32261,
+          "timing": {
+            "count": 5,
+            "mean_seconds": 1.792948246205924,
+            "median_seconds": 1.7942150390008464,
+            "p95_seconds": 1.7956937220005784
+          }
+        },
+        "block_precached": {
+          "prompt_tokens": 32257,
+          "precache_timing": {
+            "count": 5,
+            "mean_seconds": 1.1929840588069056,
+            "median_seconds": 1.1939039290009532,
+            "p95_seconds": 1.199758575996384
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.14169843859854153,
+            "median_seconds": 0.14184850300080143,
+            "p95_seconds": 0.14265972599969245
+          }
+        },
+        "block_cache_ready": {
+          "prompt_tokens": 32257,
+          "cache_ready_build_timing": {
+            "count": 5,
+            "mean_seconds": 1.2240590253961272,
+            "median_seconds": 1.2235101749829482,
+            "p95_seconds": 1.225719729991397
+          },
+          "timing": {
+            "count": 5,
+            "mean_seconds": 0.0957660769985523,
+            "median_seconds": 0.09566506400005892,
+            "p95_seconds": 0.09664189899922349
+          }
+        },
+        "median_speedup_rag_over_block_precached": 12.648811944040814,
+        "mean_speedup_rag_over_block_precached": 12.653267487905675,
+        "median_speedup_rag_over_block_cache_ready": 18.755175233037438,
+        "mean_speedup_rag_over_block_cache_ready": 18.722164490804275
+      }
+    }
+  ]
+}
