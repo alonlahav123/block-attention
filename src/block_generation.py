@@ -277,6 +277,26 @@ def generate_block_tokens(
         emb=emb,
         num_local_attention_blocks=num_local_attention_blocks,
     )
+    return generate_from_precomputed_block_state(
+        past_key_values=past_key_values,
+        input_ids=input_ids,
+        generation_config=generation_config,
+        model=model,
+        emb=emb,
+        tokenizer=tokenizer,
+    )
+
+
+@torch.no_grad()
+def generate_from_precomputed_block_state(
+    *,
+    past_key_values: list[DynamicCache] | None,
+    input_ids: torch.Tensor,
+    generation_config: GenerationConfig,
+    model: LlamaForCausalLM,
+    emb: LlamaRotaryEmbedding,
+    tokenizer: PreTrainedTokenizer,
+) -> tuple[torch.Tensor, int]:
     if past_key_values is not None:
         past_key_values = merge_and_rotary_past_key_values(pkvs=past_key_values, emb=emb)
 

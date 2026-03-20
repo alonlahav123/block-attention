@@ -240,7 +240,7 @@ def probe_attention_support(*, model_path: str, gpu_id: int, attn_implementation
     device = f"cuda:{gpu_id}"
     model = AutoModelForCausalLM.from_pretrained(
         pretrained_model_name_or_path=model_path,
-        torch_dtype=resolve_dtype(),
+        dtype=resolve_dtype(),
         device_map=device,
         attn_implementation=attn_implementation,
     )
@@ -545,7 +545,7 @@ def load_model_for_benchmark(
     device = f"cuda:{gpu_id}"
     model = AutoModelForCausalLM.from_pretrained(
         pretrained_model_name_or_path=model_path,
-        torch_dtype=resolve_dtype(),
+        dtype=resolve_dtype(),
         device_map=device,
         attn_implementation=attn_implementation,
     )

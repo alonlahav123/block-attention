@@ -120,7 +120,7 @@ def load_model(args: Args):
             )
             return AutoModelForCausalLM.from_pretrained(
                 pretrained_model_name_or_path=args.model,
-                torch_dtype=dtype,
+                dtype=dtype,
                 device_map=args.device,
                 attn_implementation=attn_implementation,
             )
