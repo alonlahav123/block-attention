@@ -1,4 +1,5 @@
 import argparse
+import copy
 import gc
 import json
 import random
@@ -23,7 +24,9 @@ from src.block_generation import (
     count_block_prompt_tokens,
     decode_generated_tokens,
     encode_block_inputs,
+    generate_from_merged_past,
     generate_from_precomputed_block_state,
+    merge_and_rotary_past_key_values,
 )
 from src.rag_prompting import build_rag_blocks, build_rag_prompt
 
@@ -485,15 +488,125 @@ def benchmark_block_precached(
     }
 
 
+def benchmark_block_cache_ready(
+    *,
+    model_path: Path,
+    attn_implementation: str,
+    gpu_id: int,
+    blocks: list[str],
+    tokenizer,
+    warmup_iters: int,
+    measure_iters: int,
+    output_path: Path,
+) -> dict[str, Any]:
+    if output_path.exists():
+        output_path.unlink()
+
+    model = load_model_for_benchmark(
+        model_path=model_path,
+        gpu_id=gpu_id,
+        attn_implementation=attn_implementation,
+    )
+    model.eval()
+    emb = build_rotary_embedding(model_name_or_path=str(model_path), device=model.device)
+    generation_config = build_default_generation_config(
+        tokenizer=tokenizer,
+        max_new_tokens=1,
+    )
+    encoded_inputs = encode_block_inputs(
+        blocks=blocks[:-1],
+        instruction=blocks[-1],
+        tokenizer=tokenizer,
+    )
+    num_local_attention_blocks = len(blocks) - 1
+    prompt_tokens = count_block_prompt_tokens(encoded_inputs)
+
+    merged_cache_build_times: list[float] = []
+    measured_times: list[float] = []
+    instruction_input_ids = torch.tensor(
+        [encoded_inputs.instruction_token_ids],
+        dtype=torch.int64,
+    )
+
+    try:
+        for phase_name, iterations in [
+            ("warmup", warmup_iters),
+            ("measured", measure_iters),
+        ]:
+            for iteration_index in range(iterations):
+                sync_cuda(model.device)
+                cache_build_start = time.perf_counter()
+                block_past_key_values, _ = build_block_past_key_values(
+                    encoded_inputs=encoded_inputs,
+                    model=model,
+                    emb=emb,
+                    num_local_attention_blocks=num_local_attention_blocks,
+                )
+                merged_cache = None
+                if block_past_key_values is not None:
+                    merged_cache = merge_and_rotary_past_key_values(
+                        pkvs=block_past_key_values,
+                        emb=emb,
+                    )
+                sync_cuda(model.device)
+                cache_build_seconds = time.perf_counter() - cache_build_start
+
+                instruction_ids = instruction_input_ids.to(model.device)
+                cache_for_run = copy.deepcopy(merged_cache) if merged_cache is not None else None
+                sync_cuda(model.device)
+                start_time = time.perf_counter()
+                generated_token_ids, _ = generate_from_merged_past(
+                    past_key_values=cache_for_run,
+                    input_ids=instruction_ids,
+                    generation_config=generation_config,
+                    model=model,
+                    tokenizer=tokenizer,
+                )
+                sync_cuda(model.device)
+                ttft_seconds = time.perf_counter() - start_time
+
+                first_token_text = ""
+                if generated_token_ids.numel() > 0:
+                    first_token_text = decode_generated_tokens(
+                        tokenizer=tokenizer,
+                        token_ids=generated_token_ids[:1],
+                    )
+
+                append_jsonl(
+                    output_path,
+                    {
+                        "phase": phase_name,
+                        "iteration": iteration_index,
+                        "cache_build_seconds": cache_build_seconds,
+                        "ttft_seconds": ttft_seconds,
+                        "first_token_text": first_token_text,
+                    },
+                )
+                if phase_name == "measured":
+                    merged_cache_build_times.append(cache_build_seconds)
+                    measured_times.append(ttft_seconds)
+    finally:
+        del model
+        gc_cuda()
+
+    return {
+        "prompt_tokens": prompt_tokens,
+        "cache_ready_build_timing": summarize(merged_cache_build_times),
+        "timing": summarize(measured_times),
+    }
+
+
 def render_summary_markdown(summary: dict[str, Any]) -> str:
     rag = summary["rag"]
     block = summary["block_precached"]
+    block_cache_ready = summary["block_cache_ready"]
     return "\n".join(
         [
             "# Synthetic Long-Context TTFT Benchmark",
             "",
             f"- Shared attention: `{summary['shared_attn_implementation']}`",
-            "- Block-FT TTFT excludes document precaching and measures only the post-cache path.",
+            "- `Block-FT (precached)` excludes per-document cache build but still includes merge-and-rotate inside the timer.",
+            "- `Block-FT (cache-ready)` excludes both per-document cache build and merged-cache preparation, and measures only the final instruction prefill plus first token.",
             f"- Target prompt tokens: `{summary['target_prompt_tokens']}`",
             f"- Actual RAG prompt tokens: `{summary['rag_prompt_tokens']}`",
             f"- Actual Block prompt tokens: `{summary['block_prompt_tokens']}`",
@@ -514,19 +627,35 @@ def render_summary_markdown(summary: dict[str, Any]) -> str:
                 f"{milliseconds(block['timing']['median_seconds'])} | "
                 f"{milliseconds(block['timing']['p95_seconds'])} |"
             ),
+            (
+                f"| Tulu3-Block-FT (cache-ready) | {block_cache_ready['timing']['count']} | "
+                f"{milliseconds(block_cache_ready['timing']['mean_seconds'])} | "
+                f"{milliseconds(block_cache_ready['timing']['median_seconds'])} | "
+                f"{milliseconds(block_cache_ready['timing']['p95_seconds'])} |"
+            ),
             "",
             "## Speedup",
-            f"- Median speedup (RAG / Block-FT): `{summary['median_speedup_rag_over_block']:.4f}`",
-            f"- Mean speedup (RAG / Block-FT): `{summary['mean_speedup_rag_over_block']:.4f}`",
+            f"- Median speedup (RAG / Block-FT precached): `{summary['median_speedup_rag_over_block_precached']:.4f}`",
+            f"- Mean speedup (RAG / Block-FT precached): `{summary['mean_speedup_rag_over_block_precached']:.4f}`",
+            f"- Median speedup (RAG / Block-FT cache-ready): `{summary['median_speedup_rag_over_block_cache_ready']:.4f}`",
+            f"- Mean speedup (RAG / Block-FT cache-ready): `{summary['mean_speedup_rag_over_block_cache_ready']:.4f}`",
             "",
             "## Block Precache Reference",
             (
-                f"- Mean precache time not included in TTFT: "
+                f"- Mean per-document cache build not included in `Block-FT (precached)` TTFT: "
                 f"`{milliseconds(block['precache_timing']['mean_seconds'])} ms`"
             ),
             (
-                f"- Median precache time not included in TTFT: "
+                f"- Median per-document cache build not included in `Block-FT (precached)` TTFT: "
                 f"`{milliseconds(block['precache_timing']['median_seconds'])} ms`"
+            ),
+            (
+                f"- Mean merged-cache prep not included in `Block-FT (cache-ready)` TTFT: "
+                f"`{milliseconds(block_cache_ready['cache_ready_build_timing']['mean_seconds'])} ms`"
+            ),
+            (
+                f"- Median merged-cache prep not included in `Block-FT (cache-ready)` TTFT: "
+                f"`{milliseconds(block_cache_ready['cache_ready_build_timing']['median_seconds'])} ms`"
             ),
         ]
     ) + "\n"
@@ -609,6 +738,16 @@ def main() -> None:
         measure_iters=args.measure_iters,
         output_path=output_root / "block_precached_runs.jsonl",
     )
+    block_cache_ready_summary = benchmark_block_cache_ready(
+        model_path=block_model_path,
+        attn_implementation=shared_attn_implementation,
+        gpu_id=args.gpu_id,
+        blocks=blocks,
+        tokenizer=block_tokenizer,
+        warmup_iters=args.warmup_iters,
+        measure_iters=args.measure_iters,
+        output_path=output_root / "block_cache_ready_runs.jsonl",
+    )
 
     summary = {
         "shared_attn_implementation": shared_attn_implementation,
@@ -619,14 +758,25 @@ def main() -> None:
         "num_documents": args.num_documents,
         "rag": rag_summary,
         "block_precached": block_summary,
-        "median_speedup_rag_over_block": (
+        "block_cache_ready": block_cache_ready_summary,
+        "median_speedup_rag_over_block_precached": (
             rag_summary["timing"]["median_seconds"] / block_summary["timing"]["median_seconds"]
             if block_summary["timing"]["median_seconds"] > 0
             else 0.0
         ),
-        "mean_speedup_rag_over_block": (
+        "mean_speedup_rag_over_block_precached": (
             rag_summary["timing"]["mean_seconds"] / block_summary["timing"]["mean_seconds"]
             if block_summary["timing"]["mean_seconds"] > 0
+            else 0.0
+        ),
+        "median_speedup_rag_over_block_cache_ready": (
+            rag_summary["timing"]["median_seconds"] / block_cache_ready_summary["timing"]["median_seconds"]
+            if block_cache_ready_summary["timing"]["median_seconds"] > 0
+            else 0.0
+        ),
+        "mean_speedup_rag_over_block_cache_ready": (
+            rag_summary["timing"]["mean_seconds"] / block_cache_ready_summary["timing"]["mean_seconds"]
+            if block_cache_ready_summary["timing"]["mean_seconds"] > 0
             else 0.0
         ),
     }

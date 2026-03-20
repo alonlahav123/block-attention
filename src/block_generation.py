@@ -300,6 +300,27 @@ def generate_from_precomputed_block_state(
     if past_key_values is not None:
         past_key_values = merge_and_rotary_past_key_values(pkvs=past_key_values, emb=emb)
 
+    return generate_from_merged_past(
+        past_key_values=past_key_values,
+        input_ids=input_ids,
+        generation_config=generation_config,
+        model=model,
+        tokenizer=tokenizer,
+    )
+
+
+@torch.no_grad()
+def generate_from_merged_past(
+    *,
+    past_key_values: DynamicCache | None,
+    input_ids: torch.Tensor,
+    generation_config: GenerationConfig,
+    model: LlamaForCausalLM,
+    tokenizer: PreTrainedTokenizer,
+) -> tuple[torch.Tensor, int]:
+    if input_ids.ndim != 2:
+        raise ValueError("input_ids must be rank-2 [batch, seq]")
+
     input_length = input_ids.size(-1)
     outputs = model.generate(
         input_ids=input_ids,
