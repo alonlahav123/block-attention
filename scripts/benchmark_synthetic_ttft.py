@@ -111,6 +111,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--gpu-id", type=int, default=0)
     parser.add_argument("--target-prompt-tokens", type=int, default=32000)
+    parser.add_argument("--target-passage-tokens", type=int, default=None)
+    parser.add_argument("--user-input-tokens", type=int, default=50)
     parser.add_argument("--num-documents", type=int, default=8)
     parser.add_argument("--warmup-iters", type=int, default=2)
     parser.add_argument("--measure-iters", type=int, default=5)
@@ -235,15 +237,44 @@ def random_title(rng: random.Random, doc_index: int) -> str:
     return f"Synthetic Document {doc_index + 1}: {rng.choice(SAFE_WORDS).title()} {rng.choice(SAFE_WORDS).title()}"
 
 
+def build_fixed_token_text(
+    *,
+    tokenizer,
+    target_tokens: int,
+    seed: int,
+) -> str:
+    if target_tokens <= 0:
+        return ""
+
+    rng = random.Random(seed)
+    chunks: list[str] = []
+    token_ids: list[int] = []
+    while len(token_ids) < target_tokens:
+        chunks.append(random_chunk(rng, 16))
+        token_ids = tokenizer.encode(" ".join(chunks), add_special_tokens=False)
+    return tokenizer.decode(token_ids[:target_tokens], skip_special_tokens=True)
+
+
 def build_synthetic_documents(
     *,
     tokenizer,
-    target_prompt_tokens: int,
+    target_prompt_tokens: int | None,
+    target_passage_tokens: int | None,
+    user_input_tokens: int,
     num_documents: int,
     seed: int,
-) -> tuple[str, list[dict[str, Any]], int]:
-    rng = random.Random(seed)
-    question = "Return a one-word answer based on the retrieved documents."
+) -> tuple[str, list[dict[str, Any]], int, int]:
+    if target_prompt_tokens is None and target_passage_tokens is None:
+        raise ValueError("Expected target_prompt_tokens or target_passage_tokens")
+    if target_prompt_tokens is not None and target_passage_tokens is not None:
+        raise ValueError("Use only one of target_prompt_tokens or target_passage_tokens")
+
+    rng = random.Random(seed + 17)
+    question = build_fixed_token_text(
+        tokenizer=tokenizer,
+        target_tokens=user_input_tokens,
+        seed=seed,
+    )
     documents = [
         {"title": random_title(rng, doc_index), "text": ""}
         for doc_index in range(num_documents)
@@ -251,14 +282,22 @@ def build_synthetic_documents(
 
     chunk_words = 32
     round_robin_index = 0
-    prompt_tokens = len(
+    empty_prompt_tokens = len(
         tokenizer.encode(
             build_rag_prompt(question=question, documents=documents),
             add_special_tokens=False,
         )
     )
+    prompt_tokens = empty_prompt_tokens
+    passage_tokens = 0
 
-    while prompt_tokens < target_prompt_tokens:
+    def need_more_tokens() -> bool:
+        if target_prompt_tokens is not None:
+            return prompt_tokens < target_prompt_tokens
+        assert target_passage_tokens is not None
+        return passage_tokens < target_passage_tokens
+
+    while need_more_tokens():
         document = documents[round_robin_index % num_documents]
         addition = random_chunk(rng, chunk_words)
         if document["text"]:
@@ -272,8 +311,9 @@ def build_synthetic_documents(
                 add_special_tokens=False,
             )
         )
+        passage_tokens = prompt_tokens - empty_prompt_tokens
 
-    return question, documents, prompt_tokens
+    return question, documents, prompt_tokens, passage_tokens
 
 
 def load_model_for_benchmark(
@@ -621,9 +661,11 @@ def render_summary_markdown(summary: dict[str, Any]) -> str:
             f"- Shared attention: `{summary['shared_attn_implementation']}`",
             "- `Block-FT (precached)` excludes per-document cache build but still includes merge-and-rotate inside the timer.",
             "- `Block-FT (cache-ready)` excludes both per-document cache build and merged-cache preparation, and measures only the final instruction prefill plus first token.",
-            f"- Target prompt tokens: `{summary['target_prompt_tokens']}`",
+            f"- User input tokens: `{summary['user_input_tokens']}`",
+            f"- Target prompt tokens: `{summary['target_prompt_tokens']}`" if summary["target_prompt_tokens"] is not None else f"- Target passage tokens: `{summary['target_passage_tokens']}`",
             f"- Actual RAG prompt tokens: `{summary['rag_prompt_tokens']}`",
             f"- Actual Block prompt tokens: `{summary['block_prompt_tokens']}`",
+            f"- Actual passage tokens: `{summary['actual_passage_tokens']}`",
             f"- Documents: `{summary['num_documents']}`",
             "",
             "## Overall",
@@ -675,38 +717,57 @@ def render_summary_markdown(summary: dict[str, Any]) -> str:
     ) + "\n"
 
 
-def main() -> None:
-    args = parse_args()
-    output_root = Path(args.output_root).resolve()
+def run_synthetic_benchmark(
+    *,
+    rag_model: str,
+    block_model: str,
+    output_root: Path,
+    gpu_id: int,
+    target_prompt_tokens: int | None,
+    target_passage_tokens: int | None,
+    user_input_tokens: int,
+    num_documents: int,
+    warmup_iters: int,
+    measure_iters: int,
+    seed: int,
+    attn_implementation: str,
+    shared_attn_implementation: str | None = None,
+) -> dict[str, Any]:
     output_root.mkdir(parents=True, exist_ok=True)
 
-    rag_model_path = resolve_model_path(args.rag_model)
-    block_model_path = resolve_model_path(args.block_model)
+    rag_model_path = resolve_model_path(rag_model)
+    block_model_path = resolve_model_path(block_model)
     rag_tokenizer = AutoTokenizer.from_pretrained(str(rag_model_path), use_fast=False)
     block_tokenizer = AutoTokenizer.from_pretrained(str(block_model_path), use_fast=False)
 
     rag_context_limit = resolve_context_limit(AutoConfig.from_pretrained(str(rag_model_path)))
     block_context_limit = resolve_context_limit(AutoConfig.from_pretrained(str(block_model_path)))
-    effective_target_prompt_tokens = min(
-        args.target_prompt_tokens,
-        rag_context_limit - 64,
-        block_context_limit - 64,
-    )
-    if effective_target_prompt_tokens < 1024:
-        raise ValueError("Effective target prompt length is too small after context-limit adjustment")
+    effective_target_prompt_tokens = None
+    effective_target_passage_tokens = target_passage_tokens
+    if target_prompt_tokens is not None:
+        effective_target_prompt_tokens = min(
+            target_prompt_tokens,
+            rag_context_limit - 64,
+            block_context_limit - 64,
+        )
+        if effective_target_prompt_tokens < 1:
+            raise ValueError("Effective target prompt length is too small after context-limit adjustment")
 
-    shared_attn_implementation = resolve_shared_attention(
-        rag_model_path=rag_model_path,
-        block_model_path=block_model_path,
-        gpu_id=args.gpu_id,
-        requested_attn_implementation=args.attn_implementation,
-    )
+    if shared_attn_implementation is None:
+        shared_attn_implementation = resolve_shared_attention(
+            rag_model_path=rag_model_path,
+            block_model_path=block_model_path,
+            gpu_id=gpu_id,
+            requested_attn_implementation=attn_implementation,
+        )
 
-    question, documents, rag_prompt_tokens = build_synthetic_documents(
+    question, documents, rag_prompt_tokens, actual_passage_tokens = build_synthetic_documents(
         tokenizer=rag_tokenizer,
         target_prompt_tokens=effective_target_prompt_tokens,
-        num_documents=args.num_documents,
-        seed=args.seed,
+        target_passage_tokens=effective_target_passage_tokens,
+        user_input_tokens=user_input_tokens,
+        num_documents=num_documents,
+        seed=seed,
     )
     prompt = build_rag_prompt(question=question, documents=documents)
     blocks = build_rag_blocks(question=question, documents=documents)
@@ -721,55 +782,61 @@ def main() -> None:
     write_json(
         output_root / "synthetic_prompt.json",
         {
-            "seed": args.seed,
-            "target_prompt_tokens": args.target_prompt_tokens,
+            "seed": seed,
+            "user_input_tokens": user_input_tokens,
+            "target_prompt_tokens": target_prompt_tokens,
+            "target_passage_tokens": target_passage_tokens,
             "effective_target_prompt_tokens": effective_target_prompt_tokens,
-            "num_documents": args.num_documents,
+            "num_documents": num_documents,
             "question": question,
             "documents": documents,
             "rag_prompt_tokens": rag_prompt_tokens,
             "block_prompt_tokens": block_prompt_tokens,
+            "actual_passage_tokens": actual_passage_tokens,
         },
     )
 
     rag_summary = benchmark_rag(
         model_path=rag_model_path,
         attn_implementation=shared_attn_implementation,
-        gpu_id=args.gpu_id,
+        gpu_id=gpu_id,
         prompt=prompt,
         tokenizer=rag_tokenizer,
-        warmup_iters=args.warmup_iters,
-        measure_iters=args.measure_iters,
+        warmup_iters=warmup_iters,
+        measure_iters=measure_iters,
         output_path=output_root / "rag_runs.jsonl",
     )
     block_summary = benchmark_block_precached(
         model_path=block_model_path,
         attn_implementation=shared_attn_implementation,
-        gpu_id=args.gpu_id,
+        gpu_id=gpu_id,
         blocks=blocks,
         tokenizer=block_tokenizer,
-        warmup_iters=args.warmup_iters,
-        measure_iters=args.measure_iters,
+        warmup_iters=warmup_iters,
+        measure_iters=measure_iters,
         output_path=output_root / "block_precached_runs.jsonl",
     )
     block_cache_ready_summary = benchmark_block_cache_ready(
         model_path=block_model_path,
         attn_implementation=shared_attn_implementation,
-        gpu_id=args.gpu_id,
+        gpu_id=gpu_id,
         blocks=blocks,
         tokenizer=block_tokenizer,
-        warmup_iters=args.warmup_iters,
-        measure_iters=args.measure_iters,
+        warmup_iters=warmup_iters,
+        measure_iters=measure_iters,
         output_path=output_root / "block_cache_ready_runs.jsonl",
     )
 
     summary = {
         "shared_attn_implementation": shared_attn_implementation,
-        "target_prompt_tokens": args.target_prompt_tokens,
+        "user_input_tokens": user_input_tokens,
+        "target_prompt_tokens": target_prompt_tokens,
+        "target_passage_tokens": target_passage_tokens,
         "effective_target_prompt_tokens": effective_target_prompt_tokens,
         "rag_prompt_tokens": rag_summary["prompt_tokens"],
         "block_prompt_tokens": block_summary["prompt_tokens"],
-        "num_documents": args.num_documents,
+        "actual_passage_tokens": actual_passage_tokens,
+        "num_documents": num_documents,
         "rag": rag_summary,
         "block_precached": block_summary,
         "block_cache_ready": block_cache_ready_summary,
@@ -800,7 +867,29 @@ def main() -> None:
         encoding="utf-8",
     )
 
-    print(f"Shared attention: {shared_attn_implementation}")
+    return summary
+
+
+def main() -> None:
+    args = parse_args()
+    output_root = Path(args.output_root).resolve()
+    summary = run_synthetic_benchmark(
+        rag_model=args.rag_model,
+        block_model=args.block_model,
+        output_root=output_root,
+        gpu_id=args.gpu_id,
+        target_prompt_tokens=args.target_prompt_tokens,
+        target_passage_tokens=args.target_passage_tokens,
+        user_input_tokens=args.user_input_tokens,
+        num_documents=args.num_documents,
+        warmup_iters=args.warmup_iters,
+        measure_iters=args.measure_iters,
+        seed=args.seed,
+        attn_implementation=args.attn_implementation,
+        shared_attn_implementation=None,
+    )
+
+    print(f"Shared attention: {summary['shared_attn_implementation']}")
     print(f"Wrote prompt manifest: {output_root / 'synthetic_prompt.json'}")
     print(f"Wrote summary: {output_root / 'summary.md'}")
 

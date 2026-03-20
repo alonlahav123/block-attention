@@ -336,6 +336,66 @@ Notes:
 - If you need to continue an interrupted run, reuse the same output root with `--resume`.
 - The baseline runner also supports `--parallelism tensor` and `--benchmark-parallelism` if you want to compare tensor parallel against data parallel on a small subset first.
 
+#### TTFT Benchmarks
+
+For a single-GPU TTFT comparison on real RAG evaluation examples, use:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 uv run python scripts/benchmark_tulu3_ttft.py \
+  --rag-model ldsjmdy/Tulu3-RAG \
+  --block-model ldsjmdy/Tulu3-Block-FT \
+  --data-root datahub \
+  --output-root outputs/tulu3_ttft_1gpu \
+  --gpu-id 0 \
+  --attn-implementation sdpa
+```
+
+This benchmark samples the same subset from `2wiki`, `hqa`, `nq`, and `tqa` for both models and writes:
+
+- `subset_manifest.json`
+- `rag_per_example.jsonl`
+- `block_per_example.jsonl`
+- `summary.json`
+- `summary.md`
+
+For a single synthetic long-context benchmark near the 32K regime, use:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 uv run python scripts/benchmark_synthetic_ttft.py \
+  --rag-model ldsjmdy/Tulu3-RAG \
+  --block-model ldsjmdy/Tulu3-Block-FT \
+  --output-root outputs/synthetic_ttft_32k \
+  --gpu-id 0 \
+  --target-prompt-tokens 32000 \
+  --num-documents 8 \
+  --warmup-iters 2 \
+  --measure-iters 5 \
+  --attn-implementation sdpa
+```
+
+This script reports three paths:
+
+- `Tulu3-RAG`
+- `Tulu3-Block-FT (precached)`: excludes per-document KV construction, but still includes merge-and-rotate inside the timer
+- `Tulu3-Block-FT (cache-ready)`: excludes both per-document KV construction and merged-cache preparation
+
+For a Table 3-style sweep with fixed user input and increasing retrieved passage length, use:
+
+```bash
+CUDA_VISIBLE_DEVICES=0 uv run python scripts/benchmark_synthetic_ttft_sweep.py \
+  --rag-model ldsjmdy/Tulu3-RAG \
+  --block-model ldsjmdy/Tulu3-Block-FT \
+  --output-root outputs/synthetic_ttft_table3_sweep \
+  --gpu-id 0 \
+  --user-input-tokens 50 \
+  --num-documents 8 \
+  --warmup-iters 2 \
+  --measure-iters 5 \
+  --attn-implementation sdpa
+```
+
+The sweep summary in `outputs/synthetic_ttft_table3_sweep/summary.md` is formatted to compare directly against Table 3 from the paper. Each sweep point also writes its own `summary.md` and `summary.json` under `outputs/synthetic_ttft_table3_sweep/passage_<tokens>/`.
+
 ### 📈 Evaluation
 
 1. Evaluation on RAG benchmarks
