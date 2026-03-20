@@ -19,13 +19,10 @@ if str(ROOT_DIR) not in sys.path:
 
 from src.block_generation import (
     build_block_past_key_values,
-    build_default_generation_config,
     build_rotary_embedding,
     count_block_prompt_tokens,
     decode_generated_tokens,
     encode_block_inputs,
-    generate_from_merged_past,
-    generate_from_precomputed_block_state,
     merge_and_rotary_past_key_values,
 )
 from src.rag_prompting import build_rag_blocks, build_rag_prompt
@@ -197,6 +194,38 @@ def milliseconds(value: float) -> str:
     return f"{value * 1000:.2f}"
 
 
+def past_cache_length(past_key_values) -> int:
+    if past_key_values is None:
+        return 0
+    for layer in past_key_values.layers:
+        if layer.keys is not None:
+            return int(layer.keys.shape[-2])
+    return 0
+
+
+@torch.no_grad()
+def predict_first_token_ids(
+    *,
+    model,
+    input_ids: torch.Tensor,
+    past_key_values=None,
+) -> torch.Tensor:
+    total_length = past_cache_length(past_key_values) + input_ids.shape[1]
+    attention_mask = torch.ones(
+        (input_ids.shape[0], total_length),
+        dtype=torch.int64,
+        device=model.device,
+    )
+    outputs = model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        past_key_values=past_key_values,
+        use_cache=False,
+        return_dict=True,
+    )
+    return outputs.logits[:, -1, :].argmax(dim=-1).detach().cpu()
+
+
 def random_chunk(rng: random.Random, words_per_chunk: int) -> str:
     words = [rng.choice(SAFE_WORDS) for _ in range(words_per_chunk)]
     return " ".join(words) + "."
@@ -335,14 +364,8 @@ def benchmark_rag(
         attn_implementation=attn_implementation,
     )
     model.eval()
-    generation_config = build_default_generation_config(
-        tokenizer=tokenizer,
-        max_new_tokens=1,
-    )
     encoded = tokenizer(prompt, add_special_tokens=False, return_tensors="pt")
     input_ids = encoded["input_ids"].to(model.device)
-    attention_mask = encoded["attention_mask"].to(model.device)
-    input_length = input_ids.size(-1)
 
     measured_times: list[float] = []
     try:
@@ -353,17 +376,12 @@ def benchmark_rag(
             for iteration_index in range(iterations):
                 sync_cuda(model.device)
                 start_time = time.perf_counter()
-                with torch.no_grad():
-                    outputs = model.generate(
-                        input_ids=input_ids,
-                        attention_mask=attention_mask,
-                        generation_config=generation_config,
-                        use_cache=True,
-                        tokenizer=tokenizer,
-                    )
+                generated_token_ids = predict_first_token_ids(
+                    model=model,
+                    input_ids=input_ids,
+                )
                 sync_cuda(model.device)
                 ttft_seconds = time.perf_counter() - start_time
-                generated_token_ids = outputs[0][input_length:].detach().cpu()
                 first_token_text = ""
                 if generated_token_ids.numel() > 0:
                     first_token_text = decode_generated_tokens(
@@ -387,7 +405,7 @@ def benchmark_rag(
         gc_cuda()
 
     return {
-        "prompt_tokens": input_length,
+        "prompt_tokens": int(input_ids.size(-1)),
         "timing": summarize(measured_times),
     }
 
@@ -413,10 +431,6 @@ def benchmark_block_precached(
     )
     model.eval()
     emb = build_rotary_embedding(model_name_or_path=str(model_path), device=model.device)
-    generation_config = build_default_generation_config(
-        tokenizer=tokenizer,
-        max_new_tokens=1,
-    )
     encoded_inputs = encode_block_inputs(
         blocks=blocks[:-1],
         instruction=blocks[-1],
@@ -424,6 +438,11 @@ def benchmark_block_precached(
     )
     num_local_attention_blocks = len(blocks) - 1
     prompt_tokens = count_block_prompt_tokens(encoded_inputs)
+    instruction_input_ids = torch.tensor(
+        [encoded_inputs.instruction_token_ids],
+        dtype=torch.int64,
+        device=model.device,
+    )
 
     measured_times: list[float] = []
     precache_times: list[float] = []
@@ -435,7 +454,7 @@ def benchmark_block_precached(
             for iteration_index in range(iterations):
                 sync_cuda(model.device)
                 precache_start = time.perf_counter()
-                precached_past_key_values, input_ids = build_block_past_key_values(
+                precached_past_key_values, _ = build_block_past_key_values(
                     encoded_inputs=encoded_inputs,
                     model=model,
                     emb=emb,
@@ -446,13 +465,16 @@ def benchmark_block_precached(
 
                 sync_cuda(model.device)
                 start_time = time.perf_counter()
-                generated_token_ids, _ = generate_from_precomputed_block_state(
-                    past_key_values=precached_past_key_values,
-                    input_ids=input_ids,
-                    generation_config=generation_config,
+                merged_cache = None
+                if precached_past_key_values is not None:
+                    merged_cache = merge_and_rotary_past_key_values(
+                        pkvs=copy.deepcopy(precached_past_key_values),
+                        emb=emb,
+                    )
+                generated_token_ids = predict_first_token_ids(
                     model=model,
-                    emb=emb,
-                    tokenizer=tokenizer,
+                    input_ids=instruction_input_ids,
+                    past_key_values=merged_cache,
                 )
                 sync_cuda(model.device)
                 ttft_seconds = time.perf_counter() - start_time
@@ -509,10 +531,6 @@ def benchmark_block_cache_ready(
     )
     model.eval()
     emb = build_rotary_embedding(model_name_or_path=str(model_path), device=model.device)
-    generation_config = build_default_generation_config(
-        tokenizer=tokenizer,
-        max_new_tokens=1,
-    )
     encoded_inputs = encode_block_inputs(
         blocks=blocks[:-1],
         instruction=blocks[-1],
@@ -520,7 +538,6 @@ def benchmark_block_cache_ready(
     )
     num_local_attention_blocks = len(blocks) - 1
     prompt_tokens = count_block_prompt_tokens(encoded_inputs)
-
     merged_cache_build_times: list[float] = []
     measured_times: list[float] = []
     instruction_input_ids = torch.tensor(
@@ -551,16 +568,12 @@ def benchmark_block_cache_ready(
                 sync_cuda(model.device)
                 cache_build_seconds = time.perf_counter() - cache_build_start
 
-                instruction_ids = instruction_input_ids.to(model.device)
-                cache_for_run = copy.deepcopy(merged_cache) if merged_cache is not None else None
                 sync_cuda(model.device)
                 start_time = time.perf_counter()
-                generated_token_ids, _ = generate_from_merged_past(
-                    past_key_values=cache_for_run,
-                    input_ids=instruction_ids,
-                    generation_config=generation_config,
+                generated_token_ids = predict_first_token_ids(
                     model=model,
-                    tokenizer=tokenizer,
+                    input_ids=instruction_input_ids,
+                    past_key_values=merged_cache,
                 )
                 sync_cuda(model.device)
                 ttft_seconds = time.perf_counter() - start_time
