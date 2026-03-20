@@ -8,14 +8,14 @@ PAPER_ROWS = {
         "hqa": 0.723,
         "nq": 0.604,
         "tqa": 0.751,
-        "macro_average": (0.722 + 0.723 + 0.604 + 0.751) / 4,
+        "average": (0.722 + 0.723 + 0.604 + 0.751) / 4,
     },
     "Tulu3-RAG (paper)": {
         "2wiki": 0.732,
         "hqa": 0.748,
         "nq": 0.615,
         "tqa": 0.758,
-        "macro_average": (0.732 + 0.748 + 0.615 + 0.758) / 4,
+        "average": (0.732 + 0.748 + 0.615 + 0.758) / 4,
     },
 }
 
@@ -40,12 +40,15 @@ def parse_args() -> argparse.Namespace:
 
 def load_result(path: Path) -> dict[str, float]:
     payload = json.loads(path.read_text(encoding="utf-8"))
+    average = payload.get("average", payload.get("macro_average"))
+    if average is None:
+        raise KeyError(f"Expected 'average' or 'macro_average' in {path}")
     return {
         "2wiki": payload["datasets"]["2wiki"]["best_subspan_em"],
         "hqa": payload["datasets"]["hqa"]["best_subspan_em"],
         "nq": payload["datasets"]["nq"]["best_subspan_em"],
         "tqa": payload["datasets"]["tqa"]["best_subspan_em"],
-        "macro_average": payload["macro_average"],
+        "average": average,
     }
 
 
@@ -88,10 +91,10 @@ def make_absolute_section(rows: dict[str, dict[str, float]]) -> tuple[str, list[
                 format_pct(scores["hqa"]),
                 format_pct(scores["nq"]),
                 format_pct(scores["tqa"]),
-                format_pct(scores["macro_average"]),
+                format_pct(scores["average"]),
             ]
         )
-    return "Absolute Scores", ["Run", "2wiki", "HQA", "NQ", "TQA", "Macro"], section_rows
+    return "Absolute Scores", ["Run", "2wiki", "HQA", "NQ", "TQA", "Average"], section_rows
 
 
 def make_block_vs_rag_delta_section(
@@ -109,7 +112,7 @@ def make_block_vs_rag_delta_section(
 
     return (
         "Block-FT - RAG Delta",
-        ["Source", "2wiki", "HQA", "NQ", "TQA", "Macro"],
+        ["Source", "2wiki", "HQA", "NQ", "TQA", "Average"],
         [
             [
                 "Your Runs",
@@ -117,7 +120,7 @@ def make_block_vs_rag_delta_section(
                 f"{(local_block_scores['hqa'] - local_rag_scores['hqa']) * 100:+.2f}",
                 f"{(local_block_scores['nq'] - local_rag_scores['nq']) * 100:+.2f}",
                 f"{(local_block_scores['tqa'] - local_rag_scores['tqa']) * 100:+.2f}",
-                f"{(local_block_scores['macro_average'] - local_rag_scores['macro_average']) * 100:+.2f}",
+                f"{(local_block_scores['average'] - local_rag_scores['average']) * 100:+.2f}",
             ],
             [
                 "Paper",
@@ -125,7 +128,7 @@ def make_block_vs_rag_delta_section(
                 f"{(paper_block_scores['hqa'] - paper_rag_scores['hqa']) * 100:+.2f}",
                 f"{(paper_block_scores['nq'] - paper_rag_scores['nq']) * 100:+.2f}",
                 f"{(paper_block_scores['tqa'] - paper_rag_scores['tqa']) * 100:+.2f}",
-                f"{(paper_block_scores['macro_average'] - paper_rag_scores['macro_average']) * 100:+.2f}",
+                f"{(paper_block_scores['average'] - paper_rag_scores['average']) * 100:+.2f}",
             ],
         ],
     )

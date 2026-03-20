@@ -41,10 +41,10 @@ def main() -> None:
             "best_subspan_em": result["best_subspan_em"],
         }
 
-    macro_average = sum(item["best_subspan_em"] for item in scores.values()) / len(scores)
+    average = sum(item["best_subspan_em"] for item in scores.values()) / len(scores)
     summary = {
         "datasets": scores,
-        "macro_average": macro_average,
+        "average": average,
     }
 
     output_prefix.parent.mkdir(parents=True, exist_ok=True)
@@ -62,7 +62,7 @@ def main() -> None:
         markdown_lines.append(
             f"| {dataset_name} | {item['count']} | {item['best_subspan_em']:.6f} |"
         )
-    markdown_lines.append(f"| macro_average | - | {macro_average:.6f} |")
+    markdown_lines.append(f"| average | - | {average:.6f} |")
     output_prefix.with_suffix(".md").write_text(
         "\n".join(markdown_lines) + "\n",
         encoding="utf-8",

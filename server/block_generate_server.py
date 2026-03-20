@@ -1,240 +1,88 @@
-import json
 import gc
+import json
 import sys
+import traceback
+from dataclasses import dataclass
+from pathlib import Path
+
 import fire
 import torch
-import traceback
-from flask_cors import CORS
 from flask import Flask, request
-from pathlib import Path
+from flask_cors import CORS
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from dataclasses import dataclass
-from typing import List, Optional, Tuple, TypedDict, Union
-
-from transformers.cache_utils import DynamicCache
-from transformers.modeling_outputs import CausalLMOutputWithPast
-from transformers.models.llama.modeling_llama import LlamaRotaryEmbedding, LlamaConfig, LlamaForCausalLM
-
-from transformers import (
-    AutoTokenizer, PreTrainedTokenizer, AutoModelForCausalLM, GenerationConfig, AutoConfig
+from src.block_generation import (
+    build_default_generation_config,
+    build_rotary_embedding,
+    decode_generated_tokens,
+    encode_block_inputs,
+    generate_block_tokens,
 )
-
 from src.runtime import get_cuda_device
-
-SFTDataInstanceInputs = TypedDict("SFTDataInstanceInputs", {
-    "input_ids": List[int],
-    "labels": List[int]
-})
-
-SFTDataInstance = TypedDict("SFTDataInstance", {
-    "prompt": str,
-    "answers": List[str],
-    "generated": str,
-    "inputs": SFTDataInstanceInputs
-})
 
 app = Flask(__name__)
 CORS(app, supports_credentials=True)
 VERBOSE_PROMPTS = False
 
 
-def pkv_to_device(pkv: DynamicCache, device: Union[torch.device, str]) -> DynamicCache:
-    for layer in pkv.layers:
-        if layer.keys is not None:
-            layer.keys = layer.keys.to(device=device)
-        if layer.values is not None:
-            layer.values = layer.values.to(device=device)
-    return pkv
+def resolve_dtype(name: str) -> torch.dtype:
+    mapping = {
+        "bfloat16": torch.bfloat16,
+        "float16": torch.float16,
+        "float32": torch.float32,
+    }
+    if name not in mapping:
+        raise ValueError(f"Unsupported dtype: {name}")
+    return mapping[name]
 
 
-def rotate_half(x):
-    """
-    transformers.models.llama.modeling_llama.rotate_half
-    Rotates half the hidden dims of the input.
-    """
-    x1 = x[..., : x.shape[-1] // 2]
-    x2 = x[..., x.shape[-1] // 2:]
-    return torch.cat(tensors=(-x2, x1), dim=-1)
-
-
-def apply_rotary_pos_emb(k, cos, sin, position_ids, unsqueeze_dim=1):
-    """
-    transformers.models.llama.modeling_llama.apply_rotary_pos_emb
-    Applies Rotary Position Embedding to the query and key tensors.
-
-    Args:
-        k (`torch.Tensor`): The key tensor.
-        cos (`torch.Tensor`): The cosine part of the rotary embedding.
-        sin (`torch.Tensor`): The sine part of the rotary embedding.
-        position_ids (`torch.Tensor`):
-            The position indices of the tokens corresponding to the query and key tensors. For example, this can be
-            used to pass offsetted position ids when working with a KV-cache.
-        unsqueeze_dim (`int`, *optional*, defaults to 1):
-            The 'unsqueeze_dim' argument specifies the dimension along which to unsqueeze cos[position_ids] and
-            sin[position_ids] so that they can be properly broadcasted to the dimensions of q and k. For example, note
-            that cos[position_ids] and sin[position_ids] have the shape [batch_size, seq_len, head_dim]. Then, if q and
-            k have the shape [batch_size, heads, seq_len, head_dim], then setting unsqueeze_dim=1 makes
-            cos[position_ids] and sin[position_ids] broadcastable to the shapes of q and k. Similarly, if q and k have
-            the shape [batch_size, seq_len, heads, head_dim], then set unsqueeze_dim=2.
-    Returns:
-        `tuple(torch.Tensor)` comprising of the query and key tensors rotated using the Rotary Position Embedding.
-    """
-    cos = cos.unsqueeze(unsqueeze_dim)
-    sin = sin.unsqueeze(unsqueeze_dim)
-    # q_embed = (q * cos) + (rotate_half(q) * sin)
-    k_embed = (k * cos) + (rotate_half(k) * sin)
-    return k_embed.to(dtype=torch.bfloat16)
-
-
-def _get_first_layer_keys(pkv: DynamicCache) -> torch.Tensor:
-    for layer in pkv.layers:
-        if layer.keys is not None:
-            return layer.keys
-    raise ValueError("DynamicCache has no key tensors.")
-
-
-def apply_pkv_rotary_position_embeddings(pkv: DynamicCache, emb: LlamaRotaryEmbedding) -> DynamicCache:
-    first_layer_keys = _get_first_layer_keys(pkv=pkv)
-    device = first_layer_keys.device
-    emb.to(device=device)
-    position_ids = torch.arange(start=0, end=first_layer_keys.size(-2), dtype=torch.int64, device=device)
-    position_ids = position_ids.unsqueeze(dim=0).repeat(repeats=[first_layer_keys.size(0), 1])
-    cos, sin = emb(x=first_layer_keys.to(dtype=torch.float32), position_ids=position_ids)
-    for layer in pkv.layers:
-        if layer.keys is None:
-            continue
-        layer.keys = apply_rotary_pos_emb(
-            k=layer.keys.to(dtype=torch.float32), cos=cos, sin=sin, position_ids=position_ids
-        )
-    return pkv
-
-
-def apply_pkv_rerotary_position_embeddings(pkv: DynamicCache, emb: LlamaRotaryEmbedding) -> DynamicCache:
-    first_layer_keys = _get_first_layer_keys(pkv=pkv)
-    device = first_layer_keys.device
-    emb.to(device=device)
-    position_ids = torch.arange(start=0, end=first_layer_keys.size(-2), dtype=torch.int64, device=device)
-    position_ids = position_ids.unsqueeze(dim=0).repeat(repeats=[first_layer_keys.size(0), 1])
-    cos, sin = emb(x=first_layer_keys.to(dtype=torch.float32), position_ids=position_ids)
-    for layer in pkv.layers:
-        if layer.keys is None:
-            continue
-        layer.keys = apply_rotary_pos_emb(
-            k=layer.keys.to(dtype=torch.float32), cos=cos, sin=-sin, position_ids=position_ids
-        )
-    return pkv
-
-
-def merge_and_rotary_past_key_values(pkvs: List[DynamicCache], emb: LlamaRotaryEmbedding) -> DynamicCache:
-    cache = pkvs[0]
-    for l_idx, layer in enumerate(cache.layers):
-        if layer.keys is None or layer.values is None:
-            continue
-
-        layer.keys = torch.cat(
-            tensors=[layer.keys] + [pkvs[b_idx].layers[l_idx].keys for b_idx in range(1, len(pkvs))],
-            dim=-2
-        )
-        layer.values = torch.cat(
-            tensors=[layer.values] + [pkvs[b_idx].layers[l_idx].values for b_idx in range(1, len(pkvs))],
-            dim=-2
-        )
-    cache = apply_pkv_rotary_position_embeddings(pkv=cache, emb=emb)
-    return cache
-
-
-@torch.no_grad()
-def build_block_past_key_values(
-        blocks: List[str], instruction: str, tokenizer: PreTrainedTokenizer, model: LlamaForCausalLM,
-        emb: LlamaRotaryEmbedding, num_local_attention_blocks: int
-) -> Tuple[Optional[List[DynamicCache]], torch.Tensor]:
-    if len(blocks) > num_local_attention_blocks:
-        instruction = "".join(blocks[num_local_attention_blocks:]) + instruction
-        blocks = blocks[:num_local_attention_blocks]
-
-    if num_local_attention_blocks == 0:
-        instruction = "".join(blocks) + instruction
-        blocks = []
-
-    if VERBOSE_PROMPTS:
-        print(f"Prompt | num local attention blocks: {num_local_attention_blocks}\n")
-        print(json.dumps({
-            "blocks": blocks,
-            "instruction_ans_response": instruction,
-        }, ensure_ascii=False, indent=4))
-
-    caches: List[DynamicCache] = []
-    input_ids = None
-    for b_idx, block in enumerate(blocks):
-        block_input_ids = torch.tensor(
-            data=[tokenizer.encode(block, add_special_tokens=False)],
-            dtype=torch.int64,
-            device=model.device
-        )
-        if b_idx == 0:
-            input_ids = block_input_ids
-        else:
-            input_ids = torch.cat(tensors=[input_ids, block_input_ids], dim=-1)
-
-        output: CausalLMOutputWithPast = model(
-            input_ids=block_input_ids, use_cache=True, past_key_values=DynamicCache(config=model.config),
-            return_dict=True
-        )
-        pkv = apply_pkv_rerotary_position_embeddings(pkv=output.past_key_values, emb=emb)
-        caches.append(pkv)
-
-    response_input_ids = torch.tensor(
-        data=[tokenizer.encode(instruction, add_special_tokens=False)],
-        dtype=torch.int64,
-        device=model.device
-    )
-    if input_ids is None:
-        return None, response_input_ids
-    input_ids = torch.cat(tensors=[input_ids, response_input_ids], dim=-1)
-    return caches, input_ids
-
-
-@torch.no_grad()
-def block_generate(
-        blocks: List[str], instruction: str, generation_config: GenerationConfig, model: LlamaForCausalLM,
-        emb: LlamaRotaryEmbedding, tokenizer: PreTrainedTokenizer, num_local_attention_blocks: int
-) -> str:
-    past_key_values, input_ids = build_block_past_key_values(
-        blocks=blocks, instruction=instruction, tokenizer=tokenizer, model=model, emb=emb,
-        num_local_attention_blocks=num_local_attention_blocks,
-    )
-    if past_key_values is not None:
-        past_key_values = merge_and_rotary_past_key_values(pkvs=past_key_values, emb=emb)
-    input_length = input_ids.size(-1)
-
-    outputs = model.generate(
-        input_ids=input_ids,
-        attention_mask=torch.ones_like(input_ids, dtype=torch.int64),
-        generation_config=generation_config,
-        past_key_values=past_key_values,
-        use_cache=True,
-        eos_token_id=[tokenizer.eos_token_id],
-        tokenizer=tokenizer,
-    )
-    return tokenizer.decode(token_ids=outputs[0][input_length:].tolist())
-
-
-@app.route('/generate', methods=['POST'])
+@app.route("/generate", methods=["POST"])
 def _block_generate():
     try:
         form = request.get_json()
-        generated = block_generate(
-            blocks=form["blocks"][:-1],
-            instruction=form["blocks"][-1],
+        blocks = form["blocks"]
+        if not blocks:
+            raise ValueError("Expected at least one block in the request payload")
+
+        prompt_blocks = blocks[:-1]
+        instruction = blocks[-1]
+        if VERBOSE_PROMPTS:
+            print(
+                json.dumps(
+                    {
+                        "blocks": prompt_blocks,
+                        "instruction": instruction,
+                        "num_local_attention_blocks": form.get(
+                            "num_local_attention_blocks",
+                            10000,
+                        ),
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                flush=True,
+            )
+
+        encoded_inputs = encode_block_inputs(
+            blocks=prompt_blocks,
+            instruction=instruction,
+            tokenizer=tokenizer,
+        )
+        generated_token_ids, _ = generate_block_tokens(
+            encoded_inputs=encoded_inputs,
             generation_config=generation_config,
             model=model,
             emb=emb,
             tokenizer=tokenizer,
             num_local_attention_blocks=form.get("num_local_attention_blocks", 10000),
+        )
+        generated = decode_generated_tokens(
+            tokenizer=tokenizer,
+            token_ids=generated_token_ids,
         )
         print("generated: ", generated)
         return {"ret": 0, "generated": generated, "message": ""}
@@ -262,15 +110,19 @@ def load_model(args: Args):
     if args.attn_implementation == "auto":
         attn_implementations = ["flash_attention_2", "sdpa"]
 
+    dtype = resolve_dtype(args.dtype)
     last_error = None
     for attn_implementation in attn_implementations:
         try:
-            print(f"Loading model with attention implementation: {attn_implementation}", flush=True)
+            print(
+                f"Loading model with attention implementation: {attn_implementation}",
+                flush=True,
+            )
             return AutoModelForCausalLM.from_pretrained(
                 pretrained_model_name_or_path=args.model,
-                dtype=torch.bfloat16,
+                torch_dtype=dtype,
                 device_map=args.device,
-                attn_implementation=attn_implementation
+                attn_implementation=attn_implementation,
             )
         except Exception as exc:
             last_error = exc
@@ -285,31 +137,17 @@ def load_model(args: Args):
     raise last_error
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     args: Args = fire.Fire(component=Args)
     tokenizer = AutoTokenizer.from_pretrained(
         pretrained_model_name_or_path=args.model,
-        use_fast=False
+        use_fast=False,
     )
-
-    block_attention_special_token = torch.tensor(
-        data=[tokenizer.encode("[Block-Attention]", add_special_tokens=False)], dtype=torch.int64, device=args.device
-    )
-
     model = load_model(args=args)
     model.eval()
-    config: LlamaConfig = AutoConfig.from_pretrained(pretrained_model_name_or_path=args.model)
-    emb: LlamaRotaryEmbedding = LlamaRotaryEmbedding(config=config).to(device=model.device, dtype=torch.float32)
-    emb.eval()
-
-    generation_config = GenerationConfig(
-        do_sample=False,
-        temperature=1.0,
-        repetition_penalty=1.0,
-        num_beams=1,
-        eos_token_id=tokenizer.eos_token_id,
-        pad_token_id=tokenizer.eos_token_id,
+    emb = build_rotary_embedding(model_name_or_path=args.model, device=model.device)
+    generation_config = build_default_generation_config(
+        tokenizer=tokenizer,
         max_new_tokens=args.max_new_tokens,
-        stop_strings=['<|im_end|>', "<|eot_id|>", "<|end_of_text|>", "<|endoftext|>", "</s>", "Question:"]
     )
     app.run(host="0.0.0.0", port=args.port)
