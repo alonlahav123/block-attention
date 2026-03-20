@@ -543,6 +543,7 @@ def benchmark_block_cache_ready(
     instruction_input_ids = torch.tensor(
         [encoded_inputs.instruction_token_ids],
         dtype=torch.int64,
+        device=model.device,
     )
 
     try:
